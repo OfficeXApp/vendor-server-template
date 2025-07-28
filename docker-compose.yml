@@ -1,0 +1,52 @@
+# docker-compose.yml - For Cloudflare/RepoCloud.io delegated SSL or local development
+version: "3.8"
+
+services:
+  # TimescaleDB (PostgreSQL with TimescaleDB extension)
+  db:
+    image: timescale/timescaledb-ha:pg17
+    restart: unless-stopped
+    ports:
+      - "5432:5432" # Expose PostgreSQL port to host
+    environment:
+      # These variables are read from your .env file
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - db_data:/var/lib/postgresql/data # Persistent storage for database data
+      - ./src/schema/schema.sql:/docker-entrypoint-initdb.d/init.sql # Initialize schema
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s # Give the DB a bit more time to start initially
+
+  # Your Node.js Fastify Application
+  app:
+    build: . # Build from the Dockerfile in the current directory
+    restart: unless-stopped
+    ports:
+      - "3001:${PORT:-3001}" # Map host port 3001 to container port (default 3001)
+      - "${PORT:-3001}:${PORT:-3001}" # Map host port 3001 to container port 3001 (for direct access)
+    environment:
+      - NODE_ENV=${NODE_ENV} # Read from .env
+      - DATA_DIR=${DATA_DIR} # Read from .env (for your app's data)
+      - PORT=${PORT:-3001} # Read from .env, with default
+      - SERVER_DOMAIN=${SERVER_DOMAIN} # Read from .env
+      - SANITY_CHECK_ENV=${SANITY_CHECK_ENV} # Read from .env
+      # Database connection string for your Node.js app
+      # IMPORTANT: Use the service name 'db' as the hostname for inter-container communication
+      - DATABASE_URL=${DATABASE_URL}
+    volumes:
+      - app_data:/data # Persistent storage for your application's data (e.g., /data/drives)
+    depends_on:
+      db:
+        condition: service_healthy # Ensure database is ready before app starts
+
+volumes:
+  app_data:
+    driver: local # Docker managed volume for app data
+  db_data:
+    driver: local # Docker managed volume for database data

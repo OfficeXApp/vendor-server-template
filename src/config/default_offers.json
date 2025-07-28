@@ -1,0 +1,33 @@
+[
+  {
+    "id": "AmazonS3Disk_01",
+    "sku": "AmazonS3Disk_01",
+    "title": "Amazon S3 Storage Bucket",
+    "description": "Scalable and secure cloud storage.",
+    "metadata": {
+      "unit_price_usd_per_gb_month": 0.023,
+      "min_storage_gb": 1,
+      "max_storage_gb": 100000
+    }
+  },
+  {
+    "id": "GeminiAPIKey_01",
+    "sku": "GeminiAPIKey_01",
+    "title": "Gemini API Key",
+    "description": "Access to Google Gemini AI models.",
+    "metadata": {
+      "unit_price_usd_per_1k_tokens": 0.002,
+      "models_supported": ["gemini-pro", "gemini-pro-vision"]
+    }
+  },
+  {
+    "id": "DMailAccount_01",
+    "sku": "DMailAccount_01",
+    "title": "Decentralized Mail Account",
+    "description": "Secure and private email powered by blockchain.",
+    "metadata": {
+      "monthly_price_usd": 5.0,
+      "storage_limit_gb": 10
+    }
+  }
+]
