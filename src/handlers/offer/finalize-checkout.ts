@@ -8,8 +8,8 @@ import {
   OfferID,
 } from "../../types/core.types";
 import { JobRunStatus } from "@officexapp/types";
-import * as WalletService from "../../services/wallets"; // Import the wallets service
-import { Address } from "viem"; // Import Address type from viem
+import * as WalletService from "../../services/wallets";
+import { Address } from "viem";
 
 // POST /offer/:offer_id/checkout/finalize
 export const finalize_checkout_handler = async (
@@ -18,7 +18,6 @@ export const finalize_checkout_handler = async (
 ) => {
   const { offer_id } = request.params as {
     offer_id: OfferID;
-    // wallet_id is from body, not params for this route
   };
   const {
     wallet_id,
@@ -89,9 +88,6 @@ export const finalize_checkout_handler = async (
       return;
     }
 
-    // Ensure the wallet has a sufficient balance for the purchase
-    // This check should ideally be against the actual offer price, not just > 0
-    // For now, we'll use the updatedWallet.latest_usd_balance
     if (updatedWallet.latest_usd_balance <= 0) {
       reply.status(400).send({
         error: "Wallet has insufficient funds to finalize purchase.",
@@ -99,7 +95,6 @@ export const finalize_checkout_handler = async (
       return;
     }
 
-    // Ensure offramp address is set for the transfer
     if (!wallet.offramp_evm_address) {
       reply.status(400).send({
         error: "Offramp EVM address not configured for this deposit wallet.",
@@ -108,31 +103,34 @@ export const finalize_checkout_handler = async (
     }
 
     // 2. Send gas if needed (e.g., if ETH balance is too low for a transaction)
-    // A typical transaction on Base might cost ~0.00005 ETH. GAS_TANK_AMOUNT_ETH is 0.0001 ETH.
-    // We'll send gas if the current ETH balance is less than a threshold (e.g., 0.00005 ETH)
-    const MIN_ETH_FOR_TX = 0.00005; // A reasonable minimum to cover a single transaction
+    const MIN_ETH_FOR_TX = 0.00005;
+    let gasTxHash: string | null = null;
     if (ethBalance < MIN_ETH_FOR_TX) {
       request.log.info(
         `Deposit wallet ${wallet_id} ETH balance (${ethBalance} ETH) is low. Sending gas from vendor tank.`
       );
       try {
-        const gasTxHash = await WalletService.sendFromGasTank(
+        const gasReceipt = await WalletService.sendFromGasTank(
           wallet.evm_address as Address
         );
+        gasTxHash = gasReceipt.transactionHash;
         request.log.info(
-          `Gas transfer initiated for wallet ${wallet_id}. Tx Hash: ${gasTxHash}`
+          `Gas transfer confirmed for wallet ${wallet_id}. Tx Hash: ${gasTxHash}. Status: ${gasReceipt.status}`
         );
-        // In a real-world scenario, you might want to wait for this transaction to be mined
-        // or use a robust queuing system for subsequent steps. For this example, we proceed.
+        if (gasReceipt.status !== "success") {
+          throw new Error(`Gas transaction ${gasTxHash} failed on chain.`);
+        }
       } catch (gasError) {
         request.log.error(
           `Failed to send gas to wallet ${wallet_id}:`,
           gasError
         );
-        // Decide if this is a fatal error or if we can proceed without gas (unlikely for transfer)
         reply
           .status(500)
           .send({ error: "Failed to send gas to deposit wallet." });
+        alertVendorError(
+          `Failed to send gas to deposit wallet for ${customer_purchase_id}`
+        );
         return;
       }
     }
@@ -149,13 +147,13 @@ export const finalize_checkout_handler = async (
       customer_user_id: customer_user_id,
       customer_org_id: customer_org_id,
       customer_org_endpoint: customer_org_endpoint,
-      customer_org_api_key: customer_org_api_key, // WARNING: Encrypt in production!
+      customer_org_api_key: customer_org_api_key,
       vendor_id: vendor_id,
       pricing: pricing,
-      customer_check_billing_api_key: customer_check_billing_api_key, // WARNING: Encrypt in production!
-      vendor_update_billing_api_key: vendor_update_billing_api_key, // WARNING: Encrypt in production!
+      customer_check_billing_api_key: customer_check_billing_api_key,
+      vendor_update_billing_api_key: vendor_update_billing_api_key,
       vendor_notes: vendor_notes || "",
-      balance: updatedWallet.latest_usd_balance, // Initial balance from the deposit wallet (USD value)
+      balance: updatedWallet.latest_usd_balance,
       balance_low_trigger: balance_low_trigger,
       balance_critical_trigger: balance_critical_trigger,
       balance_termination_trigger: balance_termination_trigger,
@@ -173,43 +171,52 @@ export const finalize_checkout_handler = async (
     });
 
     // 5. Transfer the deposit wallet's ETH balance to the offramp wallet
-    // This assumes the primary balance to be transferred is ETH.
-    // If USDC/USDT also needs to be transferred, you'd need to implement ERC-20 transfer logic
-    // in wallets.ts and call it here.
-    request.log.info(
-      `Initiating ETH transfer from deposit wallet ${wallet_id} to offramp wallet ${wallet.offramp_evm_address}.`
-    );
     let transferTxHash: string | null = null;
     try {
-      // WARNING: wallet.private_key MUST be securely handled and encrypted in production.
-      // For this example, it's directly used as stored in DB.
-      transferTxHash = await WalletService.sendWalletTransfer(
+      const transferReceipt = await WalletService.sendWalletTransfer(
         wallet.offramp_evm_address as Address,
-        wallet.private_key as any // Cast to any because viem's Hex type is stricter than string
+        wallet.private_key as any
       );
+      transferTxHash = transferReceipt.transactionHash;
       request.log.info(
-        `Funds transfer initiated for wallet ${wallet_id}. Tx Hash: ${transferTxHash}`
+        `Funds transfer confirmed for wallet ${wallet_id}. Tx Hash: ${transferTxHash}. Status: ${transferReceipt.status}`
       );
+      if (transferReceipt.status !== "success") {
+        throw new Error(
+          `Funds transfer transaction ${transferTxHash} failed on chain.`
+        );
+      }
     } catch (transferError) {
       request.log.error(
         `Failed to transfer funds from wallet ${wallet_id} to offramp:`,
         transferError
       );
-      // Decide how to handle this: revert purchase, mark as pending, manual intervention.
-      // For now, we'll log and still return success for the purchase creation,
-      // but a real system would need more robust error handling here.
-      // You might want to update the purchase status to 'transfer_failed' or similar.
+      alertVendorError(
+        `Failed to transfer funds from wallet ${wallet_id} to offramp. Purchase ${createdPurchase.id} created.`
+      );
+      // Depending on your business logic, you might want to revert the purchase or mark it for manual review
+      // For now, we proceed but log the failure and alert the vendor.
     }
 
-    // Placeholder: Vendor fulfills the customer purchase and updates the customers OfficeX org purchase record
     request.log.info(
       `Notifying OfficeX of new purchase ${createdPurchase.customer_purchase_id}.`
     );
 
-    if (!transferTxHash) {
-      await alertVendorError(
-        `Failed to transfer funds from wallet ${wallet_id} to offramp. Purchase ${createdPurchase.id} created.`
-      );
+    // Only return success if the main fund transfer was successful, or if it's acceptable for it to fail for now.
+    // The current logic proceeds even if transfer fails, which might not be desired.
+    // Consider adding a `status: 'transfer_failed'` to `CustomerPurchase` if transfer fails.
+    if (
+      !transferTxHash ||
+      (transferTxHash && gasTxHash && transferTxHash !== gasTxHash)
+    ) {
+      // This condition is a bit ambiguous, it tries to catch if transferTxHash is null,
+      // or if it was the *same* as gasTxHash (which implies gas sending failed).
+      // A more robust check is simply if `transferTxHash` is null after the try/catch.
+      if (transferTxHash === null) {
+        await alertVendorError(
+          `Funds transfer failed for purchase ${createdPurchase.id}. Wallet ${wallet_id} might still hold funds.`
+        );
+      }
     }
 
     return {

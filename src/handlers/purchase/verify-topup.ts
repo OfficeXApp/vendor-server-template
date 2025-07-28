@@ -5,17 +5,13 @@ import { CustomerPurchase, CustomerPurchaseID } from "../../types/core.types";
 import {
   checkWalletBalances,
   sendFromGasTank,
-  sendERC20Transfer, // New import for stablecoin transfers
-} from "../../services/wallets"; // Import functions directly
-import { parseEther } from "viem"; // Import parseEther for BigInt conversion
+  sendERC20Transfer,
+} from "../../services/wallets";
+import { parseEther } from "viem";
 
-// Define a threshold for minimum ETH balance required for transactions
-// This is the minimum ETH a wallet should have to cover gas for a token transfer.
-const MIN_ETH_FOR_GAS_WEI = parseEther("0.00005"); // 0.00005 ETH in Wei (adjust as needed)
-const ETH_GAS_TOPUP_AMOUNT_ETH = 0.0001; // Amount of ETH to send if gas is low
+const MIN_ETH_FOR_GAS_WEI = parseEther("0.00005");
+const ETH_GAS_TOPUP_AMOUNT_ETH = 0.0001;
 
-// Environment variables for token addresses (must be consistent with wallets.ts)
-// Ensure these are loaded and available in your application's environment.
 const USDC_ADDRESS = process.env.USDC_ADDRESS as `0x${string}`;
 const USDT_ADDRESS = process.env.USDT_ADDRESS as `0x${string}`;
 
@@ -37,7 +33,6 @@ export const verify_topup_handler = async (
       return;
     }
 
-    // Auth: Check CustomerPurchase.customer_check_billing_api_key
     const authHeader = request.headers["authorization"];
     if (
       !authHeader ||
@@ -62,7 +57,6 @@ export const verify_topup_handler = async (
       return;
     }
 
-    // --- Use Wallets Service to check actual balance on the blockchain ---
     const balances = await checkWalletBalances(
       wallet.evm_address as `0x${string}`
     );
@@ -74,7 +68,6 @@ export const verify_topup_handler = async (
     let tokenToTransferAddress: `0x${string}` | undefined;
     let tokenToTransferAmount: number = 0;
 
-    // Prioritize USDC, then USDT for determining the top-up amount
     if (USDC_ADDRESS && parseFloat(balances.usdc) > 0) {
       currentBlockchainBalanceUSD = parseFloat(balances.usdc);
       tokenToTransferAddress = USDC_ADDRESS;
@@ -88,16 +81,8 @@ export const verify_topup_handler = async (
         `No USDC or USDT found in wallet ${wallet.evm_address}. ETH balance: ${balances.eth}. ` +
           `Assuming top-up is expected in stablecoins, cannot determine USD top-up amount.`
       );
-      // If stablecoins are the primary top-up method, and none are found,
-      // then currentBlockchainBalanceUSD remains 0, and the condition below will fail.
     }
 
-    const minTargetBalanceForTopup =
-      (request.body as { min_target_balance?: number }).min_target_balance ||
-      100; // Example threshold
-
-    // Update the wallet's latest_usd_balance in DB with the observed blockchain balance.
-    // This reflects the current state of the wallet on-chain.
     await request.server.db.updateDepositWallet(wallet.id, {
       latest_usd_balance: currentBlockchainBalanceUSD,
       updated_at: Date.now(),
@@ -106,28 +91,40 @@ export const verify_topup_handler = async (
     let topupAmount = 0;
     let updatedPurchase: CustomerPurchase | null = null;
 
+    const minTargetBalanceForTopup =
+      (request.body as { min_target_balance?: number }).min_target_balance ||
+      100;
+
     if (currentBlockchainBalanceUSD >= minTargetBalanceForTopup) {
       request.log.info(
         `Funds in wallet ${wallet.id} (${currentBlockchainBalanceUSD} USD) exceeded top-up target (${minTargetBalanceForTopup} USD). ` +
           `Initiating transfer to offramp: ${wallet.offramp_evm_address}`
       );
 
-      // --- Ensure enough ETH for gas before transferring tokens ---
-      const ethBalanceWei = parseEther(balances.eth); // Convert string ETH balance to BigInt Wei
+      const ethBalanceWei = parseEther(balances.eth);
       if (ethBalanceWei < MIN_ETH_FOR_GAS_WEI) {
         request.log.info(
           `Wallet ${wallet.evm_address} has low ETH balance (${balances.eth} ETH). Sending ${ETH_GAS_TOPUP_AMOUNT_ETH} ETH for gas.`
         );
         try {
-          await sendFromGasTank(wallet.evm_address as `0x${string}`);
-          // Return immediately, asking the client to re-verify after the gas transaction confirms.
-          // This prevents blocking the request while waiting for gas and then attempting token transfer.
+          const gasReceipt = await sendFromGasTank(
+            wallet.evm_address as `0x${string}`
+          );
+          if (gasReceipt.status !== "success") {
+            throw new Error(
+              `Gas top-up transaction ${gasReceipt.transactionHash} failed on chain.`
+            );
+          }
+          // If gas top-up was initiated and confirmed, we should re-check balances
+          // or instruct the client to retry after some time.
+          // Returning 202 (Accepted) is a good pattern here, indicating the operation is ongoing.
           return reply.status(202).send({
             message:
-              "Insufficient ETH for gas. Gas top-up initiated. Please re-verify in a moment.",
+              "Insufficient ETH for gas. Gas top-up initiated and confirmed. Please re-verify shortly.",
             current_wallet_balance_usd: currentBlockchainBalanceUSD,
             min_target_balance_for_topup: minTargetBalanceForTopup,
             gas_topup_sent: true,
+            gas_topup_tx_hash: gasReceipt.transactionHash,
           });
         } catch (gasError: any) {
           request.log.error(
@@ -141,17 +138,20 @@ export const verify_topup_handler = async (
         }
       }
 
-      // --- Perform actual crypto transfer using wallets service ---
       if (tokenToTransferAddress && tokenToTransferAmount > 0) {
         try {
-          // WARNING: In production, wallet.private_key should be decrypted securely before use.
-          await sendERC20Transfer(
+          const transferReceipt = await sendERC20Transfer(
             tokenToTransferAddress,
             wallet.offramp_evm_address as `0x${string}`,
             tokenToTransferAmount,
             wallet.private_key as `0x${string}`
           );
-          topupAmount = tokenToTransferAmount; // The amount successfully transferred
+          if (transferReceipt.status !== "success") {
+            throw new Error(
+              `ERC-20 transfer transaction ${transferReceipt.transactionHash} failed on chain.`
+            );
+          }
+          topupAmount = tokenToTransferAmount;
         } catch (transferError: any) {
           request.log.error(
             `Error transferring funds from wallet ${wallet.id} to offramp ${wallet.offramp_evm_address}:`,
@@ -163,34 +163,27 @@ export const verify_topup_handler = async (
           return;
         }
       } else {
-        // This case should ideally not be reached if currentBlockchainBalanceUSD was >= minTargetBalanceForTopup
-        // and stablecoins are the expected top-up method.
         request.log.error(
           `Logic error: currentBlockchainBalanceUSD (${currentBlockchainBalanceUSD}) met target, ` +
             `but no transferable stablecoin was identified in wallet ${wallet.id}.`
         );
-        reply
-          .status(500)
-          .send({
-            error:
-              "Internal server error: No transferable stablecoin identified.",
-          });
+        reply.status(500).send({
+          error:
+            "Internal server error: No transferable stablecoin identified.",
+        });
         return;
       }
 
-      // Update purchase balance in DB with the actual amount topped up
       updatedPurchase = await request.server.db.updatePurchaseBalance(
         purchase_id,
         topupAmount
       );
 
-      // Reset wallet's latest_usd_balance in DB after successful transfer
       await request.server.db.updateDepositWallet(wallet.id, {
-        latest_usd_balance: 0, // Funds moved out
+        latest_usd_balance: 0,
         updated_at: Date.now(),
       });
 
-      // Placeholder: Notify OfficeX of top-up
       request.log.info(
         `[METERING_SERVICE_PLACEHOLDER] Notifying OfficeX of top-up for purchase ${purchase.customer_purchase_id}.`
       );

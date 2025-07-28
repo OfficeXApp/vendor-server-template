@@ -1,3 +1,4 @@
+// src/services/database.ts
 import { Pool, QueryResult, QueryResultRow } from "pg";
 import {
   Offer,

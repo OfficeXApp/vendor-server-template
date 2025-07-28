@@ -1,4 +1,4 @@
-// services/wallets.ts
+// src/services/wallets.ts
 
 import {
   createPublicClient,
@@ -11,6 +11,7 @@ import {
   PublicClient,
   WalletClient,
   toHex,
+  TransactionReceipt,
 } from "viem";
 import {
   english,
@@ -39,6 +40,7 @@ const USDC_ADDRESS = process.env.USDC_ADDRESS as Address;
 const USDT_ADDRESS = process.env.USDT_ADDRESS as Address;
 const VENDOR_WALLET_PRIVATE_KEY = process.env.VENDOR_WALLET_PRIVATE_KEY as Hex;
 const DATABASE_URL = process.env.DATABASE_URL;
+const DEFAULT_CONFIRMATIONS = 5;
 
 // Basic validation for essential environment variables
 if (!RPC_ENDPOINT) {
@@ -144,9 +146,9 @@ export async function disconnectDatabase(): Promise<void> {
  */
 export async function createRandomNewWallet(
   offerID: OfferID,
-  title?: string, // NEW PARAMETER
-  description?: string, // NEW PARAMETER
-  offrampEvmAddress?: Address // NEW PARAMETER
+  title?: string,
+  description?: string,
+  offrampEvmAddress?: Address
 ): Promise<DepositWallet> {
   try {
     const mnemonic = generateMnemonic(english);
@@ -299,15 +301,16 @@ export async function checkWalletBalances(
 
 /**
  * Sends a small, predefined amount of native ETH (gas) from the vendor's configured
- * gas tank wallet to a specified destination address. This is useful for funding new wallets
- * so they can perform their first transactions.
+ * gas tank wallet to a specified destination address and waits for confirmations.
  * @param destinationPublicAddress The public EVM address to send gas to.
- * @returns The transaction hash (Hex string).
+ * @param confirmations The number of block confirmations to wait for. Defaults to DEFAULT_CONFIRMATIONS.
+ * @returns The transaction receipt.
  * @throws Error if the vendor private key is not configured or the transaction fails.
  */
 export async function sendFromGasTank(
-  destinationPublicAddress: Address
-): Promise<Hex> {
+  destinationPublicAddress: Address,
+  confirmations: number = DEFAULT_CONFIRMATIONS
+): Promise<TransactionReceipt> {
   if (!VENDOR_WALLET_PRIVATE_KEY) {
     throw new Error(
       "Vendor wallet private key is not configured (VENDOR_WALLET_PRIVATE_KEY). Cannot send gas."
@@ -315,26 +318,34 @@ export async function sendFromGasTank(
   }
 
   try {
-    // Derive the vendor's account from the private key
     const vendorAccount = privateKeyToAccount(VENDOR_WALLET_PRIVATE_KEY);
-
-    // Convert the ETH amount to Wei (BigInt)
     const amountWei = parseEther(GAS_TANK_AMOUNT_ETH.toString());
 
     console.log(
       `Attempting to send ${GAS_TANK_AMOUNT_ETH} ETH from vendor gas tank (${vendorAccount.address}) to ${destinationPublicAddress}...`
     );
 
-    // Send the transaction using the wallet client configured with the vendor's account
     const hash = await walletClient.sendTransaction({
       to: destinationPublicAddress,
       value: amountWei,
-      account: vendorAccount, // Explicitly specify the sending account
-      chain: base, // Ensure the correct chain is used
+      account: vendorAccount,
+      chain: base,
     });
 
     console.log(`Gas tank transaction sent. Hash: ${hash}`);
-    return hash;
+
+    console.log(
+      `Waiting for ${confirmations} confirmations for gas transaction ${hash}...`
+    );
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash,
+      confirmations,
+    });
+    console.log(
+      `Gas transaction ${hash} confirmed at block ${receipt.blockNumber}. Status: ${receipt.status}`
+    );
+
+    return receipt;
   } catch (error: any) {
     console.error(
       `Error sending gas from tank to ${destinationPublicAddress}:`,
@@ -346,28 +357,26 @@ export async function sendFromGasTank(
 
 /**
  * Sends the entire native ETH balance (minus estimated gas fees) from an origin wallet
- * to a specified destination address. This function requires the private key of the origin wallet.
+ * to a specified destination address and waits for confirmations.
  * @param destinationPublicAddress The public EVM address to send funds to.
  * @param originPrivateKey The private key (Hex string) of the wallet from which to send funds.
- * @returns The transaction hash (Hex string).
+ * @param confirmations The number of block confirmations to wait for. Defaults to DEFAULT_CONFIRMATIONS.
+ * @returns The transaction receipt.
  * @throws Error if the origin wallet has insufficient balance or the transaction fails.
  */
 export async function sendWalletTransfer(
   destinationPublicAddress: Address,
-  originPrivateKey: Hex
-): Promise<Hex> {
+  originPrivateKey: Hex,
+  confirmations: number = DEFAULT_CONFIRMATIONS
+): Promise<TransactionReceipt> {
   try {
-    // Derive the origin account from the private key
     const originAccount = privateKeyToAccount(originPrivateKey);
-
-    // Ensure the walletClient is configured with the sender's account for this transaction
     const transferWalletClient = createWalletClient({
       chain: base,
       transport: http(RPC_ENDPOINT),
       account: originAccount,
     });
 
-    // Get the current balance of the origin wallet
     const balance = await publicClient.getBalance({
       address: originAccount.address,
     });
@@ -378,20 +387,14 @@ export async function sendWalletTransfer(
       );
     }
 
-    // Estimate the gas required for the transaction.
-    // Removed `chain: base` from estimateGas parameters as it's already configured on publicClient
     const gasEstimate = await publicClient.estimateGas({
       account: originAccount,
       to: destinationPublicAddress,
-      value: balance, // Use full balance for gas estimation
+      value: balance,
     });
 
-    // Get current gas price. Viem's `getFeeHistory` or `getGasPrice` can be used.
-    // Using `getGasPrice` for simplicity here.
     const estimatedGasPrice = await publicClient.getGasPrice();
     const gasCost = gasEstimate * estimatedGasPrice;
-
-    // Calculate the actual amount to send: total balance minus the estimated gas cost
     const amountToSend = balance - gasCost;
 
     if (amountToSend <= 0n) {
@@ -408,16 +411,27 @@ export async function sendWalletTransfer(
       `Attempting to send ${formatEther(amountToSend)} ETH from ${originAccount.address} to ${destinationPublicAddress}...`
     );
 
-    // Send the transaction
     const hash = await transferWalletClient.sendTransaction({
       to: destinationPublicAddress,
       value: amountToSend,
-      account: originAccount, // Explicitly specify the sending account
+      account: originAccount,
       chain: base,
     });
 
     console.log(`Wallet transfer sent. Hash: ${hash}`);
-    return hash;
+
+    console.log(
+      `Waiting for ${confirmations} confirmations for ETH transfer ${hash}...`
+    );
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash,
+      confirmations,
+    });
+    console.log(
+      `ETH transfer ${hash} confirmed at block ${receipt.blockNumber}. Status: ${receipt.status}`
+    );
+
+    return receipt;
   } catch (error: any) {
     console.error(
       `Error sending wallet transfer from ${originPrivateKey} to ${destinationPublicAddress}:`,
@@ -464,32 +478,39 @@ export async function getWalletOfPurchase(
   }
 }
 
+/**
+ * Sends ERC-20 tokens from an origin wallet to a specified destination address and waits for confirmations.
+ * @param tokenAddress The address of the ERC-20 token contract.
+ * @param destinationPublicAddress The public EVM address to send tokens to.
+ * @param amount Amount in human-readable units (e.g., 10.5 USDC).
+ * @param originPrivateKey The private key (Hex string) of the wallet from which to send funds.
+ * @param confirmations The number of block confirmations to wait for. Defaults to DEFAULT_CONFIRMATIONS.
+ * @returns The transaction receipt.
+ * @throws Error if the origin wallet has insufficient balance or the transaction fails.
+ */
 export async function sendERC20Transfer(
   tokenAddress: Address,
   destinationPublicAddress: Address,
-  amount: number, // Amount in human-readable units (e.g., 10.5 USDC)
-  originPrivateKey: Hex
-): Promise<Hex> {
+  amount: number,
+  originPrivateKey: Hex,
+  confirmations: number = DEFAULT_CONFIRMATIONS
+): Promise<TransactionReceipt> {
   try {
     const originAccount = privateKeyToAccount(originPrivateKey);
-
     const transferWalletClient = createWalletClient({
       chain: base,
       transport: http(RPC_ENDPOINT),
       account: originAccount,
     });
 
-    // Get token decimals to convert human-readable amount to raw BigInt
     const tokenDecimals = (await publicClient.readContract({
       address: tokenAddress,
       abi: ERC20_ABI,
       functionName: "decimals",
     })) as number;
 
-    // Convert human-readable amount to raw token units (e.g., 10.5 USDC -> 10500000 for 6 decimals)
     const amountRaw = BigInt(Math.floor(amount * 10 ** tokenDecimals));
 
-    // Check ERC-20 balance
     const tokenBalanceRaw = (await publicClient.readContract({
       address: tokenAddress,
       abi: ERC20_ABI,
@@ -499,7 +520,7 @@ export async function sendERC20Transfer(
 
     if (tokenBalanceRaw < amountRaw) {
       throw new Error(
-        `Insufficient token balance in ${originAccount.address}. Has ${formatEther(tokenBalanceRaw)} (raw: ${tokenBalanceRaw}), trying to send ${amount} (raw: ${amountRaw}).`
+        `Insufficient token balance in ${originAccount.address}. Has ${tokenBalanceRaw / 10n ** BigInt(tokenDecimals)} (raw: ${tokenBalanceRaw}), trying to send ${amount} (raw: ${amountRaw}).`
       );
     }
 
@@ -507,7 +528,6 @@ export async function sendERC20Transfer(
       `Attempting to send ${amount} ERC-20 tokens from ${originAccount.address} to ${destinationPublicAddress}...`
     );
 
-    // Simulate the transaction to estimate gas and ensure it will succeed
     const { request } = await publicClient.simulateContract({
       account: originAccount,
       address: tokenAddress,
@@ -517,11 +537,22 @@ export async function sendERC20Transfer(
       chain: base,
     });
 
-    // Send the transaction
     const hash = await transferWalletClient.writeContract(request);
 
     console.log(`ERC-20 transfer sent. Hash: ${hash}`);
-    return hash;
+
+    console.log(
+      `Waiting for ${confirmations} confirmations for ERC-20 transfer ${hash}...`
+    );
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash,
+      confirmations,
+    });
+    console.log(
+      `ERC-20 transfer ${hash} confirmed at block ${receipt.blockNumber}. Status: ${receipt.status}`
+    );
+
+    return receipt;
   } catch (error: any) {
     console.error(
       `Error sending ERC-20 transfer from ${originPrivateKey} to ${destinationPublicAddress}:`,
