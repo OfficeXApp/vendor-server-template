@@ -1,10 +1,6 @@
 // src/services/meter.ts
 import { DatabaseService } from "./database";
-import {
-  CustomerPurchaseID,
-  UsageRecord,
-  HistoricalBillingEntry,
-} from "../types/core.types";
+import { CustomerPurchaseID, UsageRecord, HistoricalBillingEntry } from "../types/core.types";
 
 /**
  * Service for handling metering operations, including recording usage and retrieving historical billing data.
@@ -36,7 +32,7 @@ export class MeterService {
     unit: string,
     cost_incurred: number,
     description?: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
   ): Promise<UsageRecord> {
     const newUsageRecord: UsageRecord = {
       purchase_id,
@@ -50,8 +46,7 @@ export class MeterService {
 
     // The database service handles the atomic insertion and balance deduction,
     // including trigger checks and warnings.
-    const createdRecord =
-      await this.db.addUsageRecordAndDeductBalance(newUsageRecord);
+    const createdRecord = await this.db.addUsageRecordAndDeductBalance(newUsageRecord);
 
     return createdRecord;
   }
@@ -71,7 +66,7 @@ export class MeterService {
     purchase_id: CustomerPurchaseID,
     interval: string = "daily", // Default to daily
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
   ): Promise<HistoricalBillingEntry[]> {
     // Map common interval names to TimescaleDB compatible strings
     let dbInterval: string;
@@ -98,14 +93,14 @@ export class MeterService {
         break;
     }
 
-    const history = await this.db.getHistoricalBilling(
-      purchase_id,
-      dbInterval,
-      startDate,
-      endDate
-    );
+    const history = await this.db.getHistoricalBilling(purchase_id, dbInterval, startDate, endDate);
 
     // The handler will be responsible for formatting the timestamp for the response.
     return history;
   }
 }
+
+export const alertVendorError = async (message: string) => {
+  console.error(message);
+  // this should send an alert to the vendor
+};

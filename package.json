@@ -29,7 +29,7 @@
     "@fastify/sensible": "^6.0.0",
     "@noble/ed25519": "^2.3.0",
     "@noble/hashes": "^1.8.0",
-    "@officexapp/types": "^0.0.139",
+    "@officexapp/types": "^0.0.178",
     "base64-js": "^1.5.1",
     "better-sqlite3": "^12.2.0",
     "bip39": "^3.1.0",
@@ -55,5 +55,8 @@
     "nodemon": "^3.1.10",
     "ts-node": "^10.4.0",
     "typescript": "~5.8.2"
+  },
+  "prettier": {
+    "printWidth": 120
   }
 }

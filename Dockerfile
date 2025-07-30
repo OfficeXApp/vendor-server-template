@@ -56,11 +56,11 @@ RUN groupadd -g 1001 app && \
 USER app
 
 # Expose the port your Fastify app listens on
-EXPOSE 8888
+EXPOSE 3001
 
 # Health check (uncomment and adjust if you want to use it)
 # HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-#   CMD curl -f http://localhost:8888/health || exit 1
+#   CMD curl -f http://localhost:3001/health || exit 1
 
 # Command to start the application
 CMD ["node", "dist/server.js"]

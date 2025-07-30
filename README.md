@@ -37,8 +37,8 @@ Overview of routes exposed by this vendor server:
 - 🔓 `GET /appstore/list/:list_id`
 
 - 🔓 `GET /offer/:offer_id`
-- 🔓 `POST /offer/:offer_id/checkout/wallet/create`
-- 🔓 `POST /offer/:offer_id/checkout/wallet/:wallet_id/verify`
+- 🔓 `POST /offer/:offer_id/checkout/initiate`
+- 🔓 `POST /offer/:offer_id/checkout/validate`
 - 🔓 `POST /offer/:offer_id/checkout/finalize`
 
 - 🔐 `GET /purchase/:purchase_id`
@@ -56,9 +56,9 @@ Overview of routes exposed by this vendor server:
 ### Purchase Checkout
 
 1. Customer views vendor offer on OfficeX Appstore `GET /offer/:offer_id`
-2. Customer requests a deposit wallet with min target balance, which this vendor server creates and stores in postgres `POST /offer/:offer_id/checkout/wallet/create`
+2. Customer requests a deposit wallet with min target balance, which this vendor server creates and stores in postgres `POST /offer/:offer_id/checkout/initiate`
 3. Customer sends payment to deposit wallet, typically USDC or USDT
-4. Customer verifies validity of payment, which this server checks if the deposit wallet has the expected balance `POST /offer/:offer_id/checkout/wallet/:wallet_id/verify`
+4. Customer verifies validity of payment, which this server checks if the deposit wallet has the expected balance `POST /offer/:offer_id/checkout/validate`
 5. Customer completes checkout and this vendor server creates a customer purchase record in postgres, with balance amount. This might be using an init script in phala cloud `POST /offer/:offer_id/checkout/finalize`
 6. Vendor typically has to send a bit of gas to the deposit wallet so that it can move the funds to offramp wallet
 7. Vendor fulfills the customer purchase and updates the customers OfficeX org purchase record

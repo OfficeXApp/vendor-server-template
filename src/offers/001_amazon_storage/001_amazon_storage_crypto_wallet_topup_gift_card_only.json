@@ -1,0 +1,11 @@
+{
+  "offer_id": "aws-s3-storage-giftcard",
+  "checkout_flow_id": "001_amazon_storage_crypto_wallet_topup_gift_card_only",
+  "title": "Amazon S3 Storage Giftcard | Base L2 Topup Wallet",
+  "note": "To initialize the vendor (Note: Actual deposit address and details would be provided by the backend after initiating this checkout option)",
+  "checkout_init_endpoint": "http://localhost:3001/v1/checkout/initiate",
+  "checkout_pattern": "CRYPTO_WALLET_TOPUP",
+  "vendor_notes": "You will receive a giftcard for AWS S3",
+  "vendor_disclaimer": "Immediate access. Your storage giftcard will have a crypto balance that pays for storage and bandwidth. You can top it up any time you need more.",
+  "terms_of_service_url": "https://google.com"
+}

@@ -1,45 +1,35 @@
 // src/server.ts
+import dotenv from "dotenv";
+dotenv.config();
 
-import Fastify, {
-  FastifyInstance,
-  FastifyRequest,
-  FastifyReply,
-  FastifyPluginAsync,
-} from "fastify";
-import * as dotenv from "dotenv";
+import Fastify, { FastifyInstance, FastifyRequest, FastifyReply, FastifyPluginAsync } from "fastify";
 import * as fs from "fs";
 import * as path from "path";
 import fp from "fastify-plugin";
+import fastifyCors from "@fastify/cors";
 
 import { DatabaseService } from "./services/database";
 import {
   OfferID,
-  DepositWalletID,
+  CheckoutWalletID,
   CustomerPurchaseID,
   Offer,
-  DepositWallet,
+  CheckoutWallet,
   CustomerPurchase,
-  OfferSKU,
 } from "./types/core.types";
 import { JobRunStatus } from "@officexapp/types";
 import { appstore_suggest_handler } from "./handlers/appstore/suggest";
 import { appstore_list_handler } from "./handlers/appstore/list";
-import { get_offer_handler } from "./handlers/offer/get-offer";
-import { create_deposit_wallet_handler } from "./handlers/offer/create-deposit-wallet";
-import { verify_deposit_wallet_handler } from "./handlers/offer/verify-deposit-wallet";
-import { finalize_checkout_handler } from "./handlers/offer/finalize-checkout";
-import { get_purchase_handler } from "./handlers/purchase/get-purchase";
+import { get_offer_handler } from "./handlers/checkout/get-offer";
+import { checkout_init_handler } from "./handlers/checkout/checkout-init";
+import { verify_deposit_wallet_handler } from "./handlers/checkout/checkout-validate";
+import { finalize_checkout_handler } from "./handlers/checkout/checkout-finalize";
+// import { get_purchase_handler } from "./handlers/purchase/get-purchase";
 import { meter_usage_handler } from "./handlers/purchase/meter-usage";
-import { verify_topup_handler } from "./handlers/purchase/verify-topup";
+// import { verify_topup_handler } from "./handlers/purchase/verify-topup";
 import { historical_billing_handler } from "./handlers/purchase/historical-billing";
-import {
-  authenticateCustomerBillingCheck,
-  authenticateVendorUpdateBilling,
-} from "./services/auth";
+import { authenticateCustomerBillingCheck, authenticateVendorUpdateBilling } from "./services/auth";
 import { MeterService } from "./services/meter";
-
-// Load environment variables from .env file
-dotenv.config();
 
 // Extend FastifyInstance to include our decorated 'db' property
 declare module "fastify" {
@@ -49,96 +39,106 @@ declare module "fastify" {
   }
 }
 
-const fastify: FastifyInstance = Fastify({
-  logger: {
-    level: process.env.LOG_LEVEL || "info",
-    transport: {
-      target: "pino-pretty",
-      options: {
-        colorize: true,
-        translateTime: "SYS:HH:MM:ss Z",
-        ignore: "pid,hostname",
-      },
-    },
-  },
-});
-
-const servicesPlugin: FastifyPluginAsync = async (fastify) => {
-  // Initialize DatabaseService (assuming it's not already done elsewhere)
-  const databaseService = new DatabaseService(process.env.DATABASE_URL!);
-  await databaseService.connect();
-  fastify.decorate("db", databaseService);
-
-  // Initialize MeterService and decorate Fastify instance
-  const meterService = new MeterService(databaseService);
-  fastify.decorate("meterService", meterService); // <--- NEW DECORATION
-
-  // Ensure database disconnects on server close
-  fastify.addHook("onClose", async (instance) => {
-    await instance.db.disconnect();
-  });
-};
-
-export default fp(servicesPlugin, {
-  name: "services",
-  dependencies: [], // Add dependencies if this plugin relies on others
-});
-fastify.register(servicesPlugin);
-
-// --- Fastify Hooks for Database Lifecycle ---
-fastify.addHook("onReady", async () => {
-  try {
-    await fastify.db.connect();
-    fastify.log.info("Database connected and ready.");
-  } catch (error) {
-    fastify.log.error("Failed to connect to database on startup:", error);
-    process.exit(1);
-  }
-});
-
-fastify.addHook("onClose", async () => {
-  await fastify.db.disconnect();
-  fastify.log.info("Database pool disconnected.");
-});
-
-fastify.get("/health", (request, reply) => {
-  reply.send({ status: "ok - healthy" });
-});
-fastify.get("/appstore/suggest", appstore_suggest_handler);
-fastify.get("/appstore/list/:list_id", appstore_list_handler);
-fastify.get("/offer/:offer_id", get_offer_handler);
-fastify.post(
-  "/offer/:offer_id/checkout/wallet/create",
-  create_deposit_wallet_handler
-);
-fastify.post(
-  "/offer/:offer_id/checkout/wallet/:wallet_id/verify",
-  verify_deposit_wallet_handler
-);
-fastify.post("/offer/:offer_id/checkout/finalize", finalize_checkout_handler);
-fastify.get(
-  "/purchase/:purchase_id",
-  { preHandler: [authenticateCustomerBillingCheck] },
-  get_purchase_handler
-);
-fastify.post(
-  "/purchase/:purchase_id/meter-usage",
-  { preHandler: [authenticateVendorUpdateBilling] },
-  meter_usage_handler
-);
-fastify.post(
-  "/purchase/:purchase_id/verify-topup",
-  { preHandler: [authenticateCustomerBillingCheck] },
-  verify_topup_handler
-);
-fastify.post(
-  "/purchase/:purchase_id/historical-billing",
-  { preHandler: [authenticateCustomerBillingCheck] },
-  historical_billing_handler
-);
+// Health Check Route
+const HEALTH_ROUTE = "/health";
+// Appstore Routes
+const APPSTORE_SUGGEST_ROUTE = "/v1/appstore/suggest";
+const APPSTORE_LIST_ROUTE = "/v1/appstore/list/:list_id";
+// Offer Routes
+const OFFER_VIEW_ROUTE = "/v1/offer/:offer_id";
+// Checkout Routes
+const CHECKOUT_INIT_ROUTE = "/v1/checkout/initiate";
+const CHECKOUT_VERIFY_ROUTE = "/v1/checkout/validate";
+const CHECKOUT_FINALIZE_ROUTE = "/v1/checkout/finalize";
+// Purchase Routes
+const PURCHASE_VIEW_ROUTE = "/v1/purchase/:purchase_id";
+const PURCHASE_METER_USAGE_ROUTE = "/v1/purchase/:purchase_id/meter-usage";
+const PURCHASE_VERIFY_TOPUP_ROUTE = "/v1/purchase/:purchase_id/verify-topup";
+const PURCHASE_HISTORICAL_BILLING_ROUTE = "/v1/purchase/:purchase_id/historical-billing";
 
 // --- Start the server ---
 const start = async () => {
+  const fastify: FastifyInstance = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL || "info",
+      transport: {
+        target: "pino-pretty",
+        options: {
+          colorize: true,
+          translateTime: "SYS:HH:MM:ss Z",
+          ignore: "pid,hostname",
+        },
+      },
+    },
+  });
+
+  const servicesPlugin: FastifyPluginAsync = async (fastify) => {
+    await fastify.register(fastifyCors, {
+      origin: "*", // Allow all origins
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Allowed methods
+      allowedHeaders: ["Content-Type", "Authorization"], // Allowed headers
+    });
+
+    // Initialize DatabaseService (assuming it's not already done elsewhere)
+    const databaseService = new DatabaseService(process.env.DATABASE_URL!);
+    await databaseService.connect();
+    fastify.decorate("db", databaseService);
+
+    // Initialize MeterService and decorate Fastify instance
+    const meterService = new MeterService(databaseService);
+    fastify.decorate("meterService", meterService); // <--- NEW DECORATION
+
+    // Ensure database disconnects on server close
+    fastify.addHook("onClose", async (instance) => {
+      await instance.db.disconnect();
+    });
+  };
+
+  await fastify.register(
+    fp(servicesPlugin, {
+      name: "services",
+      dependencies: [], // Add dependencies if this plugin relies on others
+    }),
+  );
+
+  // --- Fastify Hooks for Database Lifecycle ---
+  fastify.addHook("onReady", async () => {
+    try {
+      await fastify.db.connect();
+      fastify.log.info("Database connected and ready.");
+    } catch (error) {
+      fastify.log.error("Failed to connect to database on startup:", error);
+      process.exit(1);
+    }
+  });
+
+  fastify.addHook("onClose", async () => {
+    await fastify.db.disconnect();
+    fastify.log.info("Database pool disconnected.");
+  });
+
+  fastify.get(HEALTH_ROUTE, (request, reply) => {
+    reply.send({ status: "ok - healthy 👌" });
+  });
+  fastify.get(APPSTORE_SUGGEST_ROUTE, appstore_suggest_handler);
+  fastify.get(APPSTORE_LIST_ROUTE, appstore_list_handler);
+
+  fastify.get(OFFER_VIEW_ROUTE, get_offer_handler);
+  fastify.post(CHECKOUT_INIT_ROUTE, checkout_init_handler);
+  fastify.post(CHECKOUT_VERIFY_ROUTE, verify_deposit_wallet_handler);
+  fastify.post(CHECKOUT_FINALIZE_ROUTE, finalize_checkout_handler);
+  // fastify.get(PURCHASE_VIEW_ROUTE, { preHandler: [authenticateCustomerBillingCheck] }, get_purchase_handler);
+  fastify.post(PURCHASE_METER_USAGE_ROUTE, { preHandler: [authenticateVendorUpdateBilling] }, meter_usage_handler);
+  // fastify.post(PURCHASE_VERIFY_TOPUP_ROUTE, { preHandler: [authenticateCustomerBillingCheck] }, verify_topup_handler);
+  fastify.post(
+    PURCHASE_HISTORICAL_BILLING_ROUTE,
+    { preHandler: [authenticateCustomerBillingCheck] },
+    historical_billing_handler,
+  );
+
+  fastify.log.info("Registered Routes:");
+  fastify.printRoutes({ commonPrefix: false });
+
   try {
     const port = parseInt(process.env.PORT || "3001", 10);
     const host = "0.0.0.0"; // Listen on all network interfaces
@@ -149,24 +149,15 @@ const start = async () => {
     fastify.log.info(`Sanity Check Env: ${process.env.SANITY_CHECK_ENV}`);
 
     // --- Load and initialize default offers from JSON ---
-    const defaultOffersFilePath = path.join(
-      __dirname,
-      "config",
-      "default_offers.json"
-    );
+    const defaultOffersFilePath = path.join(__dirname, "config", "default_offers.json");
     let defaultOffers: Offer[] = [];
 
     try {
       const rawData = fs.readFileSync(defaultOffersFilePath, "utf8");
       defaultOffers = JSON.parse(rawData);
-      fastify.log.info(
-        `Loaded ${defaultOffers.length} default offers from ${defaultOffersFilePath}`
-      );
+      fastify.log.info(`Loaded ${defaultOffers.length} default offers from ${defaultOffersFilePath}`);
     } catch (readError) {
-      fastify.log.error(
-        `Failed to read default offers JSON file at ${defaultOffersFilePath}:`,
-        readError
-      );
+      fastify.log.error(`Failed to read default offers JSON file at ${defaultOffersFilePath}:`, readError);
       fastify.log.warn("Proceeding without loading default offers from JSON.");
     }
 
@@ -183,26 +174,17 @@ const start = async () => {
               updated_at: Date.now(),
             };
             await fastify.db.createOffer(offerToCreate);
-            fastify.log.info(
-              `Added new default offer: ${offerToCreate.title} (${offerToCreate.id})`
-            );
+            fastify.log.info(`Added new default offer: ${offerToCreate.title} (${offerToCreate.id})`);
           } else {
-            fastify.log.debug(
-              `Default offer already exists: ${existingOffer.title} (${existingOffer.id})`
-            );
+            fastify.log.debug(`Default offer already exists: ${existingOffer.title} (${existingOffer.id})`);
           }
         } catch (dbError) {
-          fastify.log.error(
-            `Error processing default offer ${offerData.id}:`,
-            dbError
-          );
+          fastify.log.error(`Error processing default offer ${offerData.id}:`, dbError);
         }
       }
       fastify.log.info("Default offers initialization complete.");
     } else {
-      fastify.log.info(
-        "No default offers to initialize (either JSON was empty or could not be read)."
-      );
+      fastify.log.info("No default offers to initialize (either JSON was empty or could not be read).");
     }
     // --- End default offers initialization ---
   } catch (err) {

@@ -1,33 +1,32 @@
-import { DriveID, JobRunID, JobRunStatus, UserID } from "@officexapp/types";
+import { CheckoutFlowID, CheckoutSessionID, DriveID, JobRunID, JobRunStatus, UserID } from "@officexapp/types";
 import { v4 as uuidv4 } from "uuid";
 
 export enum IDPrefixEnum {
   CustomerPurchase = "CustomerPurchaseID_",
-  DepositWallet = "DepositWalletID_",
+  CheckoutWallet = "CheckoutWalletID_",
   Offer = "OfferID_",
+  CheckoutSession = "CheckoutSessionID_",
+  Tracer = "TracerID_",
 }
 
 export const GenerateID = {
   CustomerPurchase: () => `${IDPrefixEnum.CustomerPurchase}${uuidv4()}`,
-  DepositWallet: () => `${IDPrefixEnum.DepositWallet}${uuidv4()}`,
+  CheckoutWallet: () => `${IDPrefixEnum.CheckoutWallet}${uuidv4()}`,
   Offer: () => `${IDPrefixEnum.Offer}${uuidv4()}`,
+  CheckoutSession: () => `${IDPrefixEnum.CheckoutSession}${uuidv4()}`,
+  Tracer: () => `${IDPrefixEnum.Tracer}${uuidv4()}`,
 };
 
 export type CustomerPurchaseID = string;
-export type DepositWalletID = string;
-export type OfferID = OfferSKU;
-
-export enum OfferSKU {
-  AmazonS3Disk_01 = "OfferID_AmazonS3Disk_01",
-  GeminiAPIKey_01 = "OfferID_GeminiAPIKey_01",
-  DMailAccount_01 = "OfferID_DMailAccount_01",
-}
+export type CheckoutWalletID = string;
+export type OfferID = string;
+export type TracerID = string;
 
 // deposit wallets can get created before a purchase
 // deposit wallets can get abandoned on checkout
 // this reside in postgres
-export interface DepositWallet {
-  id: DepositWalletID;
+export interface CheckoutWallet {
+  id: CheckoutWalletID;
   title: string;
   description: string;
   evm_address: string;
@@ -37,6 +36,8 @@ export interface DepositWallet {
   created_at: number;
   updated_at: number;
   offer_id: OfferID;
+  checkout_flow_id: CheckoutFlowID;
+  checkout_session_id: CheckoutSessionID;
   tracer?: string;
   metadata?: Record<string, any>; // Changed from 'string' to 'Record<string, any>' for JSONB
   purchase_id?: CustomerPurchaseID;
@@ -46,7 +47,7 @@ export interface DepositWallet {
 // this resides in postgres
 export interface Offer {
   id: OfferID;
-  sku: OfferSKU;
+  sku: string;
   title: string;
   description: string;
   created_at: number;
@@ -57,17 +58,15 @@ export interface Offer {
 // this resides in postgres
 export interface CustomerPurchase {
   id: CustomerPurchaseID;
-  wallet_id: DepositWalletID;
-  customer_purchase_id: JobRunID;
+  wallet_id: CheckoutWalletID;
+  officex_purchase_id: JobRunID;
   title: string;
-  status: JobRunStatus;
   description: string;
   customer_user_id: UserID;
   customer_org_id: DriveID;
   customer_org_endpoint: string;
-  customer_org_api_key: string;
   vendor_id: UserID;
-  pricing: Record<string, any>; // Changed from 'string' to 'Record<string, any>' for JSONB
+  price_line: string;
   customer_check_billing_api_key: string;
   vendor_update_billing_api_key: string;
   vendor_notes: string;

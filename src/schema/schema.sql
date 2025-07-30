@@ -1,5 +1,3 @@
--- schema.sql
-
 -- Enable the TimescaleDB extension
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
@@ -7,9 +5,10 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 SET TIME ZONE 'UTC';
 
 -- Drop tables in reverse order of dependency to allow recreation during development
+-- The current drop order is correct for dropping all tables.
 DROP TABLE IF EXISTS usage_records;
 DROP TABLE IF EXISTS customer_purchases;
-DROP TABLE IF EXISTS deposit_wallets;
+DROP TABLE IF EXISTS checkout_wallets;
 DROP TABLE IF EXISTS offers;
 
 -- Table for Offers
@@ -33,8 +32,11 @@ COMMENT ON COLUMN offers.metadata IS 'Additional JSON metadata for the offer.';
 -- Table for Deposit Wallets
 -- Stores details of cryptocurrency deposit wallets created for customer checkouts.
 -- These can exist before a purchase is finalized.
-CREATE TABLE deposit_wallets (
-    id TEXT PRIMARY KEY, -- Unique identifier for the deposit wallet (e.g., 'DepositWallet_...')
+-- Initially created without the fk_purchase constraint due to circular dependency.
+CREATE TABLE checkout_wallets (
+    id TEXT PRIMARY KEY, -- Unique identifier for the deposit wallet (e.g., 'CheckoutWallet_...')
+    checkout_flow_id TEXT,
+    checkout_session_id TEXT,
     title VARCHAR(255) NOT NULL,
     description TEXT,
     evm_address VARCHAR(42) NOT NULL UNIQUE, -- Ethereum Virtual Machine address (e.g., 0x...)
@@ -47,45 +49,38 @@ CREATE TABLE deposit_wallets (
     metadata JSONB, -- Flexible JSON storage for additional wallet details
     purchase_id TEXT UNIQUE, -- Optional: Links to a CustomerPurchase if finalized. UNIQUE as one wallet per purchase.
     offramp_evm_address VARCHAR(42), -- Address where funds are moved after verification
+    offer_id TEXT, -- ADDED: Column to link to the offers table
     
-    -- Foreign key constraint to customer_purchases (can be NULL if not yet linked)
-    CONSTRAINT fk_purchase
-        FOREIGN KEY (purchase_id)
-        REFERENCES customer_purchases(id)
-        ON DELETE SET NULL -- If a purchase is deleted, this wallet might become unlinked
-
-    -- Foreign key constraint to offer
+    -- Foreign key constraint to offer (can be added now as offers table exists)
     CONSTRAINT fk_offer
         FOREIGN KEY (offer_id)
         REFERENCES offers(id)
         ON DELETE SET NULL -- If an offer is deleted, this wallet might become unlinked
-    
 );
 
-COMMENT ON TABLE deposit_wallets IS 'Stores details of cryptocurrency deposit wallets for customer checkouts.';
-COMMENT ON COLUMN deposit_wallets.evm_address IS 'The EVM address of the deposit wallet.';
-COMMENT ON COLUMN deposit_wallets.private_key IS 'The private key for the deposit wallet. **CRITICAL: Encrypt this field in production.**';
-COMMENT ON COLUMN deposit_wallets.seed_phrase IS 'The seed phrase for the deposit wallet. **CRITICAL: Encrypt this field in production.**';
-COMMENT ON COLUMN deposit_wallets.latest_usd_balance IS 'The latest observed balance of the wallet in USD.';
-COMMENT ON COLUMN deposit_wallets.purchase_id IS 'Links to the customer purchase record once checkout is finalized.';
+COMMENT ON TABLE checkout_wallets IS 'Stores details of cryptocurrency deposit wallets for customer checkouts.';
+COMMENT ON COLUMN checkout_wallets.evm_address IS 'The EVM address of the deposit wallet.';
+COMMENT ON COLUMN checkout_wallets.private_key IS 'The private key for the deposit wallet. **CRITICAL: Encrypt this field in production.**';
+COMMENT ON COLUMN checkout_wallets.seed_phrase IS 'The seed phrase for the deposit wallet. **CRITICAL: Encrypt this field in production.**';
+COMMENT ON COLUMN checkout_wallets.latest_usd_balance IS 'The latest observed balance of the wallet in USD.';
+COMMENT ON COLUMN checkout_wallets.purchase_id IS 'Links to the customer purchase record once checkout is finalized.';
 
 
 -- Table for Customer Purchases
 -- Represents a customer's active purchase of a vendor offer.
 -- This table holds the current state and billing parameters for a purchase.
+-- Initially created without the fk_wallet constraint due to circular dependency.
 CREATE TABLE customer_purchases (
     id TEXT PRIMARY KEY, -- Unique identifier for this vendor's purchase record (e.g., 'CustomerPurchase_...')
-    wallet_id TEXT NOT NULL UNIQUE, -- Foreign key to the deposit_wallets table. UNIQUE as one wallet per purchase.
-    customer_purchase_id TEXT NOT NULL UNIQUE, -- ID from OfficeX for this purchase (JobRunID)
+    wallet_id TEXT NOT NULL UNIQUE, -- Foreign key to the checkout_wallets table. UNIQUE as one wallet per purchase.
+    officex_purchase_id TEXT NOT NULL UNIQUE, -- ID from OfficeX for this purchase (JobRunID)
     title VARCHAR(255) NOT NULL,
-    status VARCHAR(50) NOT NULL, -- e.g., 'active', 'suspended', 'terminated'
-    description TEXT,
+    description TEXT, -- ADDED COMMA HERE
     customer_user_id TEXT NOT NULL, -- OfficeX UserID of the customer
     customer_org_id TEXT NOT NULL, -- OfficeX DriveID (organization ID)
     customer_org_endpoint TEXT NOT NULL, -- Endpoint for OfficeX organization API
-    customer_org_api_key TEXT NOT NULL, -- API key for OfficeX organization. **CRITICAL: Encrypt this field in production.**
     vendor_id TEXT NOT NULL, -- Our internal vendor ID
-    pricing JSONB NOT NULL, -- Flexible JSON for pricing model details (e.g., per-GB, per-API-call)
+    price_line TEXT NOT NULL, -- Flexible JSON for pricing model details (e.g., per-GB, per-API-call)
     customer_check_billing_api_key TEXT NOT NULL UNIQUE, -- API key for customer to check billing. **CRITICAL: Encrypt this field in production.**
     vendor_update_billing_api_key TEXT NOT NULL UNIQUE, -- API key for authorized servers to update billing. **CRITICAL: Encrypt this field in production.**
     vendor_notes TEXT,
@@ -96,19 +91,13 @@ CREATE TABLE customer_purchases (
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
     updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
     tracer TEXT,
-    metadata JSONB,
-
-    -- Foreign key constraint to deposit_wallets
-    CONSTRAINT fk_wallet
-        FOREIGN KEY (wallet_id)
-        REFERENCES deposit_wallets(id)
-        ON DELETE RESTRICT -- A purchase cannot exist without its associated wallet
+    metadata JSONB
 );
 
 COMMENT ON TABLE customer_purchases IS 'Records of customer purchases, including current balance and billing parameters.';
 COMMENT ON COLUMN customer_purchases.wallet_id IS 'Foreign key to the deposit wallet associated with this purchase.';
-COMMENT ON COLUMN customer_purchases.customer_purchase_id IS 'The unique purchase ID provided by OfficeX.';
-COMMENT ON COLUMN customer_purchases.customer_org_api_key IS 'API key for interacting with the customer''s OfficeX organization. **CRITICAL: Encrypt this field in production.**';
+COMMENT ON COLUMN customer_purchases.officex_purchase_id IS 'The unique purchase ID provided by OfficeX.';
+COMMENT ON COLUMN customer_purchases.customer_org_endpoint IS 'Endpoint for OfficeX organization API.'; -- CORRECTED COMMENT
 COMMENT ON COLUMN customer_purchases.pricing IS 'JSON object detailing the pricing model for this specific purchase.';
 COMMENT ON COLUMN customer_purchases.customer_check_billing_api_key IS 'API key for the customer to query their billing status. **CRITICAL: Encrypt this field in production.**';
 COMMENT ON COLUMN customer_purchases.vendor_update_billing_api_key IS 'API key for authorized services to report usage and update balance. **CRITICAL: Encrypt this field in production.**';
@@ -117,19 +106,35 @@ COMMENT ON COLUMN customer_purchases.balance_low_trigger IS 'Balance threshold f
 COMMENT ON COLUMN customer_purchases.balance_critical_trigger IS 'Balance threshold for sending a "critical balance" notification.';
 COMMENT ON COLUMN customer_purchases.balance_termination_trigger IS 'Balance threshold at which services for this purchase are terminated.';
 
+-- Add the foreign key constraints for the circular dependency after both tables exist
+ALTER TABLE checkout_wallets
+ADD CONSTRAINT fk_purchase
+    FOREIGN KEY (purchase_id)
+    REFERENCES customer_purchases(id)
+    ON DELETE SET NULL;
+
+ALTER TABLE customer_purchases
+ADD CONSTRAINT fk_wallet
+    FOREIGN KEY (wallet_id)
+    REFERENCES checkout_wallets(id)
+    ON DELETE RESTRICT;
+
 
 -- Table for Usage Records (TimescaleDB Hypertable)
 -- This table will store individual usage events for each customer purchase.
 -- It's designed as a TimescaleDB hypertable for efficient time-series queries.
 CREATE TABLE usage_records (
-    id BIGSERIAL PRIMARY KEY, -- Auto-incrementing ID for each usage record
+    id BIGSERIAL, -- Auto-incrementing ID for each usage record
     purchase_id TEXT NOT NULL, -- Foreign key to the customer_purchases table
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- The time of the usage event (TimescaleDB time column)
     usage_amount NUMERIC(18, 6) NOT NULL, -- The quantity of usage (e.g., GB, API calls)
-    unit VARCHAR(50) NOT NULL, -- The unit of usage (e.g., 'GB', 'API_CALLS', 'MS')
+    unit TEXT NOT NULL, -- The unit of usage (e.g., 'GB', 'API_CALLS', 'MS') -- CHANGED FROM VARCHAR(50) TO TEXT
     cost_incurred NUMERIC(18, 6) NOT NULL, -- The cost deducted for this specific usage event
     description TEXT, -- Description of the usage event (e.g., 'S3 storage usage', 'Gemini API call')
     metadata JSONB, -- Flexible JSON for additional usage details (e.g., S3 bucket name, Gemini model used)
+
+    -- Primary key must include the time column for TimescaleDB hypertables if a unique index exists
+    PRIMARY KEY (id, timestamp), -- MODIFIED: Composite primary key including 'timestamp'
 
     -- Foreign key constraint to customer_purchases
     CONSTRAINT fk_purchase_usage
@@ -152,8 +157,9 @@ SELECT create_hypertable('usage_records', 'timestamp', if_not_exists => TRUE);
 
 -- Optional: Create indexes for frequently queried columns
 CREATE INDEX idx_offers_sku ON offers (sku);
-CREATE INDEX idx_deposit_wallets_evm_address ON deposit_wallets (evm_address);
-CREATE INDEX idx_customer_purchases_customer_purchase_id ON customer_purchases (customer_purchase_id);
+CREATE INDEX idx_checkout_wallets_evm_address ON checkout_wallets (evm_address);
+CREATE INDEX idx_checkout_wallets_checkout_session_id ON checkout_wallets (checkout_session_id);
+CREATE INDEX idx_customer_purchases_customer_purchase_id ON customer_purchases (officex_purchase_id);
 CREATE INDEX idx_customer_purchases_customer_user_id ON customer_purchases (customer_user_id);
 CREATE INDEX idx_customer_purchases_customer_org_id ON customer_purchases (customer_org_id);
 CREATE INDEX idx_customer_purchases_customer_check_billing_api_key ON customer_purchases (customer_check_billing_api_key);
