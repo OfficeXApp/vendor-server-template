@@ -74,6 +74,7 @@ CREATE TABLE customer_purchases (
     id TEXT PRIMARY KEY, -- Unique identifier for this vendor's purchase record (e.g., 'CustomerPurchase_...')
     wallet_id TEXT NOT NULL UNIQUE, -- Foreign key to the checkout_wallets table. UNIQUE as one wallet per purchase.
     officex_purchase_id TEXT NOT NULL UNIQUE, -- ID from OfficeX for this purchase (JobRunID)
+    checkout_session_id TEXT NOT NULL UNIQUE, -- 
     title VARCHAR(255) NOT NULL,
     description TEXT, -- ADDED COMMA HERE
     customer_user_id TEXT NOT NULL, -- OfficeX UserID of the customer
@@ -81,8 +82,8 @@ CREATE TABLE customer_purchases (
     customer_org_endpoint TEXT NOT NULL, -- Endpoint for OfficeX organization API
     vendor_id TEXT NOT NULL, -- Our internal vendor ID
     price_line TEXT NOT NULL, -- Flexible JSON for pricing model details (e.g., per-GB, per-API-call)
-    customer_check_billing_api_key TEXT NOT NULL UNIQUE, -- API key for customer to check billing. **CRITICAL: Encrypt this field in production.**
-    vendor_update_billing_api_key TEXT NOT NULL UNIQUE, -- API key for authorized servers to update billing. **CRITICAL: Encrypt this field in production.**
+    customer_billing_api_key TEXT NOT NULL UNIQUE, -- API key for customer to check billing. **CRITICAL: Encrypt this field in production.**
+    vendor_billing_api_key TEXT NOT NULL UNIQUE, -- API key for authorized servers to update billing. **CRITICAL: Encrypt this field in production.**
     vendor_notes TEXT,
     balance NUMERIC(18, 6) NOT NULL DEFAULT 0.000000, -- Current balance for this purchase in USD
     balance_low_trigger NUMERIC(18, 6) NOT NULL, -- Threshold to notify customer of low balance
@@ -98,9 +99,9 @@ COMMENT ON TABLE customer_purchases IS 'Records of customer purchases, including
 COMMENT ON COLUMN customer_purchases.wallet_id IS 'Foreign key to the deposit wallet associated with this purchase.';
 COMMENT ON COLUMN customer_purchases.officex_purchase_id IS 'The unique purchase ID provided by OfficeX.';
 COMMENT ON COLUMN customer_purchases.customer_org_endpoint IS 'Endpoint for OfficeX organization API.'; -- CORRECTED COMMENT
-COMMENT ON COLUMN customer_purchases.pricing IS 'JSON object detailing the pricing model for this specific purchase.';
-COMMENT ON COLUMN customer_purchases.customer_check_billing_api_key IS 'API key for the customer to query their billing status. **CRITICAL: Encrypt this field in production.**';
-COMMENT ON COLUMN customer_purchases.vendor_update_billing_api_key IS 'API key for authorized services to report usage and update balance. **CRITICAL: Encrypt this field in production.**';
+COMMENT ON COLUMN customer_purchases.price_line IS 'JSON object detailing the pricing model for this specific purchase.';
+COMMENT ON COLUMN customer_purchases.customer_billing_api_key IS 'API key for the customer to query their billing status. **CRITICAL: Encrypt this field in production.**';
+COMMENT ON COLUMN customer_purchases.vendor_billing_api_key IS 'API key for authorized services to report usage and update balance. **CRITICAL: Encrypt this field in production.**';
 COMMENT ON COLUMN customer_purchases.balance IS 'The current remaining balance for this purchase.';
 COMMENT ON COLUMN customer_purchases.balance_low_trigger IS 'Balance threshold for sending a "low balance" notification.';
 COMMENT ON COLUMN customer_purchases.balance_critical_trigger IS 'Balance threshold for sending a "critical balance" notification.';
@@ -162,8 +163,8 @@ CREATE INDEX idx_checkout_wallets_checkout_session_id ON checkout_wallets (check
 CREATE INDEX idx_customer_purchases_customer_purchase_id ON customer_purchases (officex_purchase_id);
 CREATE INDEX idx_customer_purchases_customer_user_id ON customer_purchases (customer_user_id);
 CREATE INDEX idx_customer_purchases_customer_org_id ON customer_purchases (customer_org_id);
-CREATE INDEX idx_customer_purchases_customer_check_billing_api_key ON customer_purchases (customer_check_billing_api_key);
-CREATE INDEX idx_customer_purchases_vendor_update_billing_api_key ON customer_purchases (vendor_update_billing_api_key);
+CREATE INDEX idx_customer_purchases_customer_check_billing_api_key ON customer_purchases (customer_billing_api_key);
+CREATE INDEX idx_customer_purchases_vendor_update_billing_api_key ON customer_purchases (vendor_billing_api_key);
 -- For usage_records, TimescaleDB automatically creates an index on the time column.
 -- An additional index on purchase_id is highly recommended for filtering usage by purchase.
 CREATE INDEX idx_usage_records_purchase_id_timestamp ON usage_records (purchase_id, timestamp DESC);

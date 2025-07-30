@@ -1,4 +1,4 @@
-// src/handlers/offer/verify-deposit-wallet.ts
+// src/handlers/checkout/checkout-validate.ts
 
 import { FastifyReply, FastifyRequest } from "fastify";
 import { CRYPTO_WALLET_TOPUP_GIFT_CARD_ONLY } from "../../offers/001_amazon_storage";

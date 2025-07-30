@@ -183,18 +183,19 @@ export class DatabaseService {
   public async createCustomerPurchase(purchase: CustomerPurchase): Promise<CustomerPurchase> {
     const query = `
       INSERT INTO customer_purchases (
-        id, wallet_id, officex_purchase_id, title, description,
+        id, wallet_id, checkout_session_id, officex_purchase_id, title, description,
         customer_user_id, customer_org_id, customer_org_endpoint,
-        vendor_id, price_line, customer_check_billing_api_key, vendor_update_billing_api_key,
+        vendor_id, price_line, customer_billing_api_key, vendor_billing_api_key,
         vendor_notes, balance, balance_low_trigger, balance_critical_trigger,
         balance_termination_trigger, created_at, updated_at, tracer, metadata
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       RETURNING *;
     `;
     const values = [
       purchase.id,
       purchase.wallet_id,
+      purchase.checkout_session_id,
       purchase.officex_purchase_id,
       purchase.title,
       purchase.description,
@@ -203,8 +204,8 @@ export class DatabaseService {
       purchase.customer_org_endpoint,
       purchase.vendor_id,
       purchase.price_line,
-      purchase.customer_check_billing_api_key,
-      purchase.vendor_update_billing_api_key,
+      purchase.customer_billing_api_key,
+      purchase.vendor_billing_api_key,
       purchase.vendor_notes,
       purchase.balance,
       purchase.balance_low_trigger,
@@ -222,6 +223,13 @@ export class DatabaseService {
   public async getCustomerPurchaseById(id: CustomerPurchaseID): Promise<CustomerPurchase | null> {
     const query = "SELECT * FROM customer_purchases WHERE id = $1;";
     const result = await this.query<CustomerPurchase>(query, [id]);
+    return result.rows[0] || null;
+  }
+  public async getCustomerPurchaseByCheckoutSessionID(
+    checkout_session_id: CheckoutSessionID,
+  ): Promise<CustomerPurchase | null> {
+    const query = "SELECT * FROM customer_purchases WHERE checkout_session_id = $1;";
+    const result = await this.query<CustomerPurchase>(query, [checkout_session_id]);
     return result.rows[0] || null;
   }
 

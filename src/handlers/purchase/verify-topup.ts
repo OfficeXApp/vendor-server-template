@@ -26,7 +26,7 @@
 //     }
 
 //     const authHeader = request.headers["authorization"];
-//     if (!authHeader || authHeader !== `Bearer ${purchase.customer_check_billing_api_key}`) {
+//     if (!authHeader || authHeader !== `Bearer ${purchase.customer_billing_api_key}`) {
 //       reply.status(401).send({ error: "Unauthorized: Invalid API Key" });
 //       return;
 //     }

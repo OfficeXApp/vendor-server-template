@@ -1,4 +1,4 @@
-// src/handlers/offer/create-deposit-wallet.ts
+// src/handlers/checkout/checkout-init.ts
 
 import { FastifyReply, FastifyRequest } from "fastify";
 import { IRequestCheckoutInit } from "@officexapp/types";

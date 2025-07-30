@@ -59,6 +59,7 @@ export interface Offer {
 export interface CustomerPurchase {
   id: CustomerPurchaseID;
   wallet_id: CheckoutWalletID;
+  checkout_session_id: CheckoutSessionID; // duplicated for simplicity
   officex_purchase_id: JobRunID;
   title: string;
   description: string;
@@ -67,8 +68,8 @@ export interface CustomerPurchase {
   customer_org_endpoint: string;
   vendor_id: UserID;
   price_line: string;
-  customer_check_billing_api_key: string;
-  vendor_update_billing_api_key: string;
+  customer_billing_api_key: string;
+  vendor_billing_api_key: string;
   vendor_notes: string;
   balance: number;
   balance_low_trigger: number;

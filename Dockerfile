@@ -11,6 +11,25 @@ RUN npm ci
 # Copy all source code
 COPY . .
 
+# --- Build the React Customer Dashboard Application ---
+# Navigate to the React app directory
+WORKDIR /app/src/dashboard/customer
+
+
+# Install React app specific dependencies (if any are not covered by root npm ci,
+# though `npm ci` at root usually gets everything if configured correctly).
+# It's safer to run `npm ci` here again to ensure all specific dev dependencies for React are there.
+COPY src/dashboard/customer/package*.json ./
+RUN npm ci --prefix /app/src/dashboard/customer
+
+# Build the React application
+# This will create the 'dist' folder inside /app/src/dashboard/customer
+RUN npm run build
+
+# --- Build the main Fastify Application ---
+WORKDIR /app
+
+
 # Run your build command. This assumes you have a "build" script in your package.json
 # For example, if you're using TypeScript, this might be "tsc" or "npm run build"
 # If your project doesn't have a specific build step (e.g., plain JS),
@@ -43,6 +62,14 @@ COPY --from=builder /app/dist ./dist
 # Copy the config directory to the dist folder in the final image
 # Ensure src/config exists in your project root relative to the Dockerfile
 COPY src/config ./dist/config
+
+# --- Copy the built React Customer Dashboard from the builder stage ---
+# Ensure the destination path matches where your Fastify server expects it to be in production.
+# Based on your server.ts: path.join(__dirname, "dashboard", "customer")
+# In the Docker container, __dirname will be /app/dist, so the path should be
+# /app/dist/dashboard/customer/dist (for the static assets)
+COPY --from=builder /app/src/dashboard/customer/dist ./dist/dashboard/customer/dist
+
 
 # Create data directory structure for your application (e.g., for file uploads)
 RUN mkdir -p /data/drives

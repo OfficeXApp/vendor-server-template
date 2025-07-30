@@ -19,11 +19,11 @@
 //       return;
 //     }
 
-//     // Auth: Check CustomerPurchase.customer_check_billing_api_key
+//     // Auth: Check CustomerPurchase.customer_billing_api_key
 //     const authHeader = request.headers["authorization"];
 //     if (
 //       !authHeader ||
-//       authHeader !== `Bearer ${purchase.customer_check_billing_api_key}`
+//       authHeader !== `Bearer ${purchase.customer_billing_api_key}`
 //     ) {
 //       reply.status(401).send({ error: "Unauthorized: Invalid API Key" });
 //       return;
@@ -41,7 +41,7 @@
 //       balance_termination_trigger: purchase.balance_termination_trigger,
 //       updated_at: purchase.updated_at,
 //       pricing: purchase.pricing,
-//       // Do NOT return customer_org_api_key, vendor_update_billing_api_key, private_key, seed_phrase
+//       // Do NOT return customer_org_api_key, vendor_billing_api_key, private_key, seed_phrase
 //     };
 //   } catch (error) {
 //     request.log.error(`Error getting purchase ${purchase_id}:`, error);

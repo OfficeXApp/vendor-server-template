@@ -7,6 +7,9 @@ import * as fs from "fs";
 import * as path from "path";
 import fp from "fastify-plugin";
 import fastifyCors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
+// import fastifyHttpProxy from "@fastify/http-proxy"; // REMOVE THIS LINE - no longer used for proxying
+// import { LOCAL_DEV_MODE } from "./constants"; // REMOVE THIS LINE - no longer used if removed conditional logic
 
 import { DatabaseService } from "./services/database";
 import {
@@ -30,6 +33,7 @@ import { meter_usage_handler } from "./handlers/purchase/meter-usage";
 import { historical_billing_handler } from "./handlers/purchase/historical-billing";
 import { authenticateCustomerBillingCheck, authenticateVendorUpdateBilling } from "./services/auth";
 import { MeterService } from "./services/meter";
+import { checkout_topup_handler } from "./handlers/checkout/checkout-topup";
 
 // Extend FastifyInstance to include our decorated 'db' property
 declare module "fastify" {
@@ -50,11 +54,14 @@ const OFFER_VIEW_ROUTE = "/v1/offer/:offer_id";
 const CHECKOUT_INIT_ROUTE = "/v1/checkout/initiate";
 const CHECKOUT_VERIFY_ROUTE = "/v1/checkout/validate";
 const CHECKOUT_FINALIZE_ROUTE = "/v1/checkout/finalize";
+const CHECKOUT_TOPUP_ROUTE = "/v1/checkout/topup";
 // Purchase Routes
 const PURCHASE_VIEW_ROUTE = "/v1/purchase/:purchase_id";
 const PURCHASE_METER_USAGE_ROUTE = "/v1/purchase/:purchase_id/meter-usage";
-const PURCHASE_VERIFY_TOPUP_ROUTE = "/v1/purchase/:purchase_id/verify-topup";
 const PURCHASE_HISTORICAL_BILLING_ROUTE = "/v1/purchase/:purchase_id/historical-billing";
+
+// Customer Dashboard Route
+const CUSTOMER_DASHBOARD_ROUTE = "/v1/dashboard/customer";
 
 // --- Start the server ---
 const start = async () => {
@@ -86,7 +93,7 @@ const start = async () => {
 
     // Initialize MeterService and decorate Fastify instance
     const meterService = new MeterService(databaseService);
-    fastify.decorate("meterService", meterService); // <--- NEW DECORATION
+    fastify.decorate("meterService", meterService);
 
     // Ensure database disconnects on server close
     fastify.addHook("onClose", async (instance) => {
@@ -97,7 +104,7 @@ const start = async () => {
   await fastify.register(
     fp(servicesPlugin, {
       name: "services",
-      dependencies: [], // Add dependencies if this plugin relies on others
+      dependencies: [],
     }),
   );
 
@@ -127,14 +134,44 @@ const start = async () => {
   fastify.post(CHECKOUT_INIT_ROUTE, checkout_init_handler);
   fastify.post(CHECKOUT_VERIFY_ROUTE, verify_deposit_wallet_handler);
   fastify.post(CHECKOUT_FINALIZE_ROUTE, finalize_checkout_handler);
+  fastify.post(CHECKOUT_TOPUP_ROUTE, checkout_topup_handler);
   // fastify.get(PURCHASE_VIEW_ROUTE, { preHandler: [authenticateCustomerBillingCheck] }, get_purchase_handler);
   fastify.post(PURCHASE_METER_USAGE_ROUTE, { preHandler: [authenticateVendorUpdateBilling] }, meter_usage_handler);
-  // fastify.post(PURCHASE_VERIFY_TOPUP_ROUTE, { preHandler: [authenticateCustomerBillingCheck] }, verify_topup_handler);
   fastify.post(
     PURCHASE_HISTORICAL_BILLING_ROUTE,
     { preHandler: [authenticateCustomerBillingCheck] },
     historical_billing_handler,
   );
+
+  const customerDashboardPath = path.join(__dirname, "dashboard", "customer");
+
+  fastify.get(CUSTOMER_DASHBOARD_ROUTE, (req, reply) => {
+    reply.sendFile("index.html", path.join(customerDashboardPath, "dist"));
+  });
+
+  // Catch-all for React app for client-side routing
+  // This route will now handle both GET and implicit HEAD requests for the SPA root
+  fastify.get(`${CUSTOMER_DASHBOARD_ROUTE}/*`, (req, reply) => {
+    reply.sendFile("index.html", path.join(customerDashboardPath, "dist"));
+  });
+
+  // Always serve the static built files, regardless of NODE_ENV
+  fastify.log.info(`Serving customer dashboard from: ${path.join(customerDashboardPath, "dist")}`);
+  fastify.register(fastifyStatic, {
+    root: path.join(customerDashboardPath, "dist"),
+    prefix: CUSTOMER_DASHBOARD_ROUTE,
+    decorateReply: true,
+    schemaHide: true,
+    wildcard: false,
+    setHeaders: (res, path, stat) => {
+      // For HTML file, ensure no-cache to avoid issues with new builds
+      if (path.endsWith(".html")) {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      }
+    },
+  });
 
   fastify.log.info("Registered Routes:");
   fastify.printRoutes({ commonPrefix: false });

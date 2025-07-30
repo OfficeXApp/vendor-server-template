@@ -29,43 +29,31 @@ function extractToken(request: FastifyRequest): string | null {
 }
 
 /**
- * Pre-handler for routes requiring CustomerPurchase.vendor_update_billing_api_key.
+ * Pre-handler for routes requiring CustomerPurchase.vendor_billing_api_key.
  * (e.g., POST /purchase/:purchase_id/notify-usage)
  */
-export async function authenticateVendorUpdateBilling(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
+export async function authenticateVendorUpdateBilling(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const { purchase_id } = request.params as { purchase_id: CustomerPurchaseID };
   const token = extractToken(request);
 
   if (!token) {
-    request.log.warn(
-      `Unauthorized access attempt to ${request.url}: No token provided.`
-    );
-    reply
-      .status(401)
-      .send({ error: "Unauthorized: Authentication token required." });
+    request.log.warn(`Unauthorized access attempt to ${request.url}: No token provided.`);
+    reply.status(401).send({ error: "Unauthorized: Authentication token required." });
     return;
   }
 
   try {
-    const purchase =
-      await request.server.db.getCustomerPurchaseById(purchase_id);
+    const purchase = await request.server.db.getCustomerPurchaseById(purchase_id);
 
     if (!purchase) {
-      request.log.warn(
-        `Unauthorized access attempt to ${request.url}: Purchase ID ${purchase_id} not found.`
-      );
-      reply
-        .status(401)
-        .send({ error: "Unauthorized: Invalid purchase ID or token." });
+      request.log.warn(`Unauthorized access attempt to ${request.url}: Purchase ID ${purchase_id} not found.`);
+      reply.status(401).send({ error: "Unauthorized: Invalid purchase ID or token." });
       return;
     }
 
-    if (token !== purchase.vendor_update_billing_api_key) {
+    if (token !== purchase.vendor_billing_api_key) {
       request.log.warn(
-        `Unauthorized access attempt to ${request.url}: Invalid vendor update billing API key for purchase ${purchase_id}.`
+        `Unauthorized access attempt to ${request.url}: Invalid vendor update billing API key for purchase ${purchase_id}.`,
       );
       reply.status(401).send({
         error: "Unauthorized: Invalid vendor update billing API key.",
@@ -74,58 +62,39 @@ export async function authenticateVendorUpdateBilling(
     }
 
     // If authentication is successful, continue to the route handler
-    request.log.debug(
-      `Vendor update billing authenticated for purchase ${purchase_id}.`
-    );
+    request.log.debug(`Vendor update billing authenticated for purchase ${purchase_id}.`);
   } catch (error) {
-    request.log.error(
-      `Authentication error for ${request.url} (purchase ${purchase_id}):`,
-      error
-    );
-    reply
-      .status(500)
-      .send({ error: "Internal server error during authentication." });
+    request.log.error(`Authentication error for ${request.url} (purchase ${purchase_id}):`, error);
+    reply.status(500).send({ error: "Internal server error during authentication." });
   }
 }
 
 /**
- * Pre-handler for routes requiring CustomerPurchase.customer_check_billing_api_key.
+ * Pre-handler for routes requiring CustomerPurchase.customer_billing_api_key.
  * (e.g., GET /purchase/:purchase_id, POST /purchase/:purchase_id/verify-topup, POST /purchase/:purchase_id/historical-billing)
  */
-export async function authenticateCustomerBillingCheck(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
+export async function authenticateCustomerBillingCheck(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const { purchase_id } = request.params as { purchase_id: CustomerPurchaseID };
   const token = extractToken(request);
 
   if (!token) {
-    request.log.warn(
-      `Unauthorized access attempt to ${request.url}: No token provided.`
-    );
-    reply
-      .status(401)
-      .send({ error: "Unauthorized: Authentication token required." });
+    request.log.warn(`Unauthorized access attempt to ${request.url}: No token provided.`);
+    reply.status(401).send({ error: "Unauthorized: Authentication token required." });
     return;
   }
 
   try {
-    const purchase =
-      await request.server.db.getCustomerPurchaseById(purchase_id);
+    const purchase = await request.server.db.getCustomerPurchaseById(purchase_id);
 
     if (!purchase) {
-      request.log.warn(
-        `Unauthorized access attempt to ${request.url}: Purchase ID ${purchase_id} not found.`
-      );
-      reply
-        .status(401)
-        .send({ error: "Unauthorized: Invalid purchase ID or token." });
+      request.log.warn(`Unauthorized access attempt to ${request.url}: Purchase ID ${purchase_id} not found.`);
+      reply.status(401).send({ error: "Unauthorized: Invalid purchase ID or token." });
       return;
     }
 
-    if (token !== purchase.customer_check_billing_api_key) {
+    if (token !== purchase.customer_billing_api_key) {
       request.log.warn(
-        `Unauthorized access attempt to ${request.url}: Invalid customer check billing API key for purchase ${purchase_id}.`
+        `Unauthorized access attempt to ${request.url}: Invalid customer check billing API key for purchase ${purchase_id}.`,
       );
       reply.status(401).send({
         error: "Unauthorized: Invalid customer check billing API key.",
@@ -134,16 +103,9 @@ export async function authenticateCustomerBillingCheck(
     }
 
     // If authentication is successful, continue to the route handler
-    request.log.debug(
-      `Customer billing check authenticated for purchase ${purchase_id}.`
-    );
+    request.log.debug(`Customer billing check authenticated for purchase ${purchase_id}.`);
   } catch (error) {
-    request.log.error(
-      `Authentication error for ${request.url} (purchase ${purchase_id}):`,
-      error
-    );
-    reply
-      .status(500)
-      .send({ error: "Internal server error during authentication." });
+    request.log.error(`Authentication error for ${request.url} (purchase ${purchase_id}):`, error);
+    reply.status(500).send({ error: "Internal server error during authentication." });
   }
 }

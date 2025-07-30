@@ -29,6 +29,14 @@ $ docker compose down --volumes
 $ docker compose down --volumes && docker compose up --build -d && docker compose logs -f
 ```
 
+dashboard frontend for hot reloading in development (in production its handled by docker)
+
+```sh
+cd src/dashboard/customer
+npm install
+npm run dev
+```
+
 ## Routes
 
 Overview of routes exposed by this vendor server:
@@ -63,15 +71,15 @@ Overview of routes exposed by this vendor server:
 6. Vendor typically has to send a bit of gas to the deposit wallet so that it can move the funds to offramp wallet
 7. Vendor fulfills the customer purchase and updates the customers OfficeX org purchase record
 8. Every offer has its own billing method, and we typically just notify the customer when funds are low
-9. Customer can view their purchase record `GET /purchase/:purchase_id` with auth `CustomerPurchase.customer_check_billing_api_key` which should match their own OfficeX records
+9. Customer can view their purchase record `GET /purchase/:purchase_id` with auth `CustomerPurchase.customer_billing_api_key` which should match their own OfficeX records
 
 ### Usage Based Billing
 
 In general, different product offers have different billing patterns. We expose a simple endpoint to handle accounting in an agnostic way.
 
-1. Vendor server exposes a route `POST /purchase/:purchase_id/meter-usage` that any authorized server with auth token == `CustomerPurchase.vendor_update_billing_api_key` can call to notify us of the usage. The endpoint will update the customer purchase record in postgres billing (timescaledb), deducting balance for that purchase record.
+1. Vendor server exposes a route `POST /purchase/:purchase_id/meter-usage` that any authorized server with auth token == `CustomerPurchase.vendor_billing_api_key` can call to notify us of the usage. The endpoint will update the customer purchase record in postgres billing (timescaledb), deducting balance for that purchase record.
 2. If balance gets too low, customer is notified and asked to top up
-3. Customer can call a "verify_topup_wallet" endpoint to verify if the deposit wallet has exceeded the min target balance. If yes, then the funds are moved to the offramp wallet and we update both customer purchase record in vendor postgres, as well as customer OfficeX purchase record. `POST /purchase/:purchase_id/verify-topup` with auth `CustomerPurchase.customer_check_billing_api_key`
+3. Customer can call a "verify_topup_wallet" endpoint to verify if the deposit wallet has exceeded the min target balance. If yes, then the funds are moved to the offramp wallet and we update both customer purchase record in vendor postgres, as well as customer OfficeX purchase record. `POST /purchase/:purchase_id/verify-topup` with auth `CustomerPurchase.customer_billing_api_key`
 4. There are 3 balance triggers: `balance_low_trigger`, `balance_critical_trigger`, and `balance_termination_trigger`. These are used to notify the customer when their balance is low or critical. The final termination balance will actually delete resources.
 5. At any time, the customer can call `POST /purchase/:purchase_id/historical-billing` to get a historical billing report for that purchase record.
 
@@ -79,15 +87,15 @@ In general, different product offers have different billing patterns. We expose 
 
 1. Every day, an organization-wide AWS S3 buckets cost report is exported as CSV, detailing daily consumption per bucket
 2. Daily script will parse the CSV to calculate the usage.
-3. Script calls the `POST /purchase/:purchase_id/meter-usage` endpoint with auth `CustomerPurchase.vendor_update_billing_api_key` to update customer balances.
+3. Script calls the `POST /purchase/:purchase_id/meter-usage` endpoint with auth `CustomerPurchase.vendor_billing_api_key` to update customer balances.
 
 ### Gemini API Key Billing
 
 This example implements a more real-time billing flow that is still agnostic to where the actual AI server is located. We simply expose an endpoint that the AI server can call to notify us of the usage.
 
-1. Expose a POST request endpoint `POST /purchase/:purchase_id/meter-usage` with auth `CustomerPurchase.vendor_update_billing_api_key` that the AI server can call to notify us of the usage. The endpoint will update the customer purchase record in postgres billing (timescaledb), deducting balance.
+1. Expose a POST request endpoint `POST /purchase/:purchase_id/meter-usage` with auth `CustomerPurchase.vendor_billing_api_key` that the AI server can call to notify us of the usage. The endpoint will update the customer purchase record in postgres billing (timescaledb), deducting balance.
 2. If balance gets too low, customer is notified and asked to top up
-3. Customer can call a "verify_topup_wallet" endpoint to verify if the deposit wallet has exceeded the min target balance. If yes, then the funds are moved to the offramp wallet and we update both customer purchase record in vendor postgres, as well as customer OfficeX purchase record. `POST /purchase/:purchase_id/verify-topup` with auth `CustomerPurchase.customer_check_billing_api_key`
+3. Customer can call a "verify_topup_wallet" endpoint to verify if the deposit wallet has exceeded the min target balance. If yes, then the funds are moved to the offramp wallet and we update both customer purchase record in vendor postgres, as well as customer OfficeX purchase record. `POST /purchase/:purchase_id/verify-topup` with auth `CustomerPurchase.customer_billing_api_key`
 
 ## Dangers
 

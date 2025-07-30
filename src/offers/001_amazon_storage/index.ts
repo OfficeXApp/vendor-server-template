@@ -2,22 +2,26 @@ import {
   CartCheckoutPatternEnum,
   IRequestCheckoutFinalize_Crypto,
   IRequestCheckoutInit,
+  IRequestCheckoutTopup,
   IRequestCheckoutValidate_Crypto,
   IResponseCheckoutFinalize,
   IResponseCheckoutFinalize_Crypto,
   IResponseCheckoutInit_Crypto,
+  IResponseCheckoutTopup,
   IResponseCheckoutValidate,
+  JobRunStatus,
 } from "@officexapp/types";
 import { FastifyReply, FastifyRequest } from "fastify";
 import { CustomerPurchase, CustomerPurchaseID, GenerateID, IDPrefixEnum, OfferID } from "../../types/core.types";
 import * as WalletService from "../../services/wallets";
-import { LOCAL_DEV_MODE, vendor_server_endpoint } from "../../constants";
+import { LOCAL_DEV_MODE, vendor_customer_dashboard, vendor_server_endpoint } from "../../constants";
 import { Address, formatUnits, Hex, parseUnits } from "viem";
 import { alertVendorError } from "../../services/meter";
 import { v4 as uuidv4 } from "uuid";
 import CHECKOUT_OPTION from "./001_amazon_storage_crypto_wallet_topup_gift_card_only.json";
 
 const minTargetBalance = BigInt(0.5 * 1e6); // 0.01 USDC
+const gas_transfer_buffer = BigInt(0.4 * 1e6); // 0.10 USDC ($0.10 to refuel gas, $0.20 of gas, $0.10 for transfer out)
 
 const initCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
   const { checkout_flow_id, org_id, user_id, tracer } = request.body as IRequestCheckoutInit;
@@ -178,24 +182,28 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
     if (!wallet) {
       const error_message = `Wallet not found for checkout_session_id=${checkout_session_id}`;
       const response_payload: IResponseCheckoutFinalize = {
-        vendor_disclaimer: error_message,
-        checkout_session_id,
         success: false,
         message: error_message,
         tracer,
-        checkout_flow_id,
+        receipt: {
+          checkout_flow_id,
+          vendor_disclaimer: error_message,
+          checkout_session_id,
+        },
       };
       return reply.status(200).send(response_payload);
     }
     if (wallet.purchase_id) {
       const error_message = `Wallet ${wallet.evm_address} already linked to a purchase ${wallet.purchase_id}, you cannot use it for this checkout_session_id=${checkout_session_id}`;
       const response_payload: IResponseCheckoutFinalize = {
-        vendor_disclaimer: error_message,
-        checkout_session_id,
         success: false,
         message: error_message,
         tracer,
-        checkout_flow_id,
+        receipt: {
+          checkout_session_id,
+          vendor_disclaimer: error_message,
+          checkout_flow_id,
+        },
       };
       return reply.status(200).send(response_payload);
     }
@@ -230,12 +238,14 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
     if (!updatedWallet) {
       const error_message = `Failed to update balance of wallet=${wallet.evm_address} for checkout_flow_id=${checkout_flow_id} and checkout_session_id=${checkout_session_id}`;
       const response_payload: IResponseCheckoutFinalize = {
-        vendor_disclaimer: error_message,
-        checkout_session_id,
         success: false,
         message: error_message,
         tracer,
-        checkout_flow_id,
+        receipt: {
+          checkout_session_id,
+          vendor_disclaimer: error_message,
+          checkout_flow_id,
+        },
       };
       return reply.status(200).send(response_payload);
     }
@@ -243,12 +253,14 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
     if (!wallet.offramp_evm_address) {
       const error_message = `Offramp EVM address not configured for this wallet=${wallet.evm_address} for checkout_flow_id=${checkout_flow_id} and checkout_session_id=${checkout_session_id}`;
       const response_payload: IResponseCheckoutFinalize = {
-        vendor_disclaimer: error_message,
-        checkout_session_id,
         success: false,
         message: error_message,
         tracer,
-        checkout_flow_id,
+        receipt: {
+          checkout_session_id,
+          vendor_disclaimer: error_message,
+          checkout_flow_id,
+        },
       };
       return reply.status(200).send(response_payload);
     }
@@ -272,8 +284,8 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
       return reply.status(500).send({ error: "Failed to send gas to deposit wallet." });
     }
 
-    const customer_check_billing_api_key = uuidv4();
-    const vendor_update_billing_api_key = uuidv4();
+    const customer_billing_api_key = uuidv4();
+    const vendor_billing_api_key = uuidv4();
 
     // 3. Create the CustomerPurchase record
     const newPurchaseId: CustomerPurchaseID = GenerateID.CustomerPurchase();
@@ -281,6 +293,7 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
       id: newPurchaseId,
       wallet_id: wallet.id,
       officex_purchase_id: officex_purchase_id,
+      checkout_session_id: checkout_session_id,
       title: `Purchase of ${CRYPTO_WALLET_TOPUP_GIFT_CARD_ONLY.offer_id} on checkout flow ${checkout_flow_id}`,
       description: `Purchase of ${CRYPTO_WALLET_TOPUP_GIFT_CARD_ONLY.offer_id} via wallet=${wallet.evm_address} and checkout_flow_id=${checkout_flow_id} during checkout_session_id=${checkout_session_id}. ${proxy_buyer_data ? `Proxy buyer data: ${JSON.stringify(proxy_buyer_data)}` : ""}`,
       customer_user_id: proxy_buyer_data?.user_id || "",
@@ -288,8 +301,8 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
       customer_org_endpoint: proxy_buyer_data?.org_endpoint || "",
       vendor_id: process.env.VENDOR_ID || "",
       price_line: `$0.01/GB/month storage, $0.01/GB egress`,
-      customer_check_billing_api_key,
-      vendor_update_billing_api_key: vendor_update_billing_api_key,
+      customer_billing_api_key,
+      vendor_billing_api_key,
       vendor_notes: `Created by ${process.env.VENDOR_ID} for checkout_flow_id=${checkout_flow_id} and checkout_session_id=${checkout_session_id} and officex_purchase_id=${officex_purchase_id} and wallet=${wallet.evm_address}. ${proxy_buyer_data ? `Proxy buyer data: ${JSON.stringify(proxy_buyer_data)}` : ""}`,
       balance: updatedWallet.latest_usd_balance,
       balance_low_trigger: Math.min(10, updatedWallet.latest_usd_balance / 5),
@@ -348,19 +361,32 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
     }
     // if offramp transfer was successful, return success
     const storage_redeem_link = LOCAL_DEV_MODE
-      ? `http://localhost:5173/org/current/redeem/disk-giftcard?redeem=________`
-      : `https://officex.app/org/current/redeem/disk-giftcard?redeem=________`;
+      ? `http://localhost:5173/org/current/redeem/disk-giftcard?redeem=eyJuYW1lIjoiQW1hem9uIERpc2siLCJkaXNrX3R5cGUiOiJBV1NfQlVDS0VUIiwicHVibGljX25vdGUiOiIiLCJhdXRoX2pzb24iOiJ7XG4gIFwiZW5kcG9pbnRcIjogXCJodHRwczovL3MzLmFtYXpvbmF3cy5jb21cIixcbiAgXCJhY2Nlc3Nfa2V5XCI6IFwiQUtJQTZQSDVMWFJVSEJQNEJKNVhcIixcbiAgXCJzZWNyZXRfa2V5XCI6IFwiejFTaHZSN2ZtU1NVMHNhNG5aRDhiU0FEQVFndGFCak9JV0V4cnJRRVwiLFxuICBcImJ1Y2tldFwiOiBcIm9meC1idWNrZXQtZnJpZW5kLTI4OFwiLFxuICBcInJlZ2lvblwiOiBcInVzLWVhc3QtMVwiXG59IiwiZW5kcG9pbnQiOiIifQ`
+      : `https://officex.app/org/current/redeem/disk-giftcard?redeem=eyJuYW1lIjoiQW1hem9uIERpc2siLCJkaXNrX3R5cGUiOiJBV1NfQlVDS0VUIiwicHVibGljX25vdGUiOiIiLCJhdXRoX2pzb24iOiJ7XG4gIFwiZW5kcG9pbnRcIjogXCJodHRwczovL3MzLmFtYXpvbmF3cy5jb21cIixcbiAgXCJhY2Nlc3Nfa2V5XCI6IFwiQUtJQTZQSDVMWFJVSEJQNEJKNVhcIixcbiAgXCJzZWNyZXRfa2V5XCI6IFwiejFTaHZSN2ZtU1NVMHNhNG5aRDhiU0FEQVFndGFCak9JV0V4cnJRRVwiLFxuICBcImJ1Y2tldFwiOiBcIm9meC1idWNrZXQtZnJpZW5kLTI4OFwiLFxuICBcInJlZ2lvblwiOiBcInVzLWVhc3QtMVwiXG59IiwiZW5kcG9pbnQiOiIifQ`;
     const success_message = `Successful Purchase! You may now redeem your storage gift card or give it to a friend. Here is the redeem link: ${storage_redeem_link}`;
     const response_payload: IResponseCheckoutFinalize = {
-      vendor_disclaimer: success_message,
-      checkout_session_id: checkout_session_id,
       success: true,
       message: success_message,
       tracer,
-      checkout_flow_id: checkout_flow_id,
-      // redeem_code?: string;
-      skip_to_final_redirect: storage_redeem_link,
-      skip_to_final_cta: "View Giftcard",
+      receipt: {
+        vendor_disclaimer: success_message,
+        checkout_session_id,
+        checkout_flow_id,
+        // redeem_code?: string;
+        skip_to_final_redirect: storage_redeem_link,
+        skip_to_final_cta: "View Giftcard",
+        vendor_name: "Amazon",
+        vendor_id: process.env.VENDOR_ID,
+        status: JobRunStatus.PAID,
+        description: "Successful Purchase!",
+        about_url: `${vendor_customer_dashboard}?checkout_session_id=${checkout_session_id}&customer_billing_api_key=${customer_billing_api_key}`,
+        billing_url: `${vendor_customer_dashboard}?checkout_session_id=${checkout_session_id}&customer_billing_api_key=${customer_billing_api_key}`,
+        support_url: `${vendor_customer_dashboard}?checkout_session_id=${checkout_session_id}&customer_billing_api_key=${customer_billing_api_key}`,
+        title: "Amazon S3 Storage Giftcard | Base L2 Topup Wallet",
+        subtitle: "Amazon S3 Storage Giftcard | Base L2 Topup Wallet",
+        pricing: "$0.01/GB/month storage, $0.01/GB egress",
+        vendor_notes: `Share giftcard with a friend: ${storage_redeem_link}`,
+      },
     };
 
     return response_payload;
@@ -370,10 +396,164 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
   }
 };
 
+const topupCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
+  const { checkout_session_id, tracer, sweep_tokens, note } = request.body as IRequestCheckoutTopup;
+
+  const wallet = await request.server.db.getCheckoutWalletByCheckoutSessionID(checkout_session_id);
+
+  if (!wallet) {
+    return reply.status(404).send({ error: "Checkout session not found" });
+  }
+
+  try {
+    const customerPurchase = await request.server.db.getCustomerPurchaseByCheckoutSessionID(checkout_session_id);
+    if (!customerPurchase) {
+      const error_message = `Customer purchase record not found for checkout_session_id=${checkout_session_id}. Cannot update balance.`;
+      request.log.warn(error_message);
+      const response_payload: IResponseCheckoutTopup = {
+        vendor_disclaimer: error_message,
+        checkout_session_id,
+        success: false,
+        message: error_message,
+        tracer,
+      };
+      return reply.status(404).send(response_payload);
+    }
+
+    // 3. Get the current token balance in the deposit wallet
+    const usdcTokenAddress = process.env.USDC_ADDRESS as Address;
+    const currentWalletBalance = await WalletService.getTokenBalance(
+      wallet.evm_address as Address,
+      usdcTokenAddress, // Assuming USDC is the primary token for top-up
+    );
+
+    if (currentWalletBalance < minTargetBalance) {
+      const error_message = `Insufficient funds in wallet=${wallet.evm_address} for token ${usdcTokenAddress}. Required: ${formatUnits(minTargetBalance, 6)}, Found: ${formatUnits(currentWalletBalance, 6)}. You can verify this on chain explorer ${process.env.CHAIN_EXPLORER_URL}/address/${wallet.evm_address}`;
+      request.log.warn(error_message);
+      const response_payload: IResponseCheckoutTopup = {
+        success: false,
+        message: error_message,
+        vendor_disclaimer: error_message,
+        checkout_session_id,
+        tracer,
+      };
+      return reply.status(200).send(response_payload);
+    }
+
+    // 4. Send gas to the deposit wallet if needed for the sweep transaction
+    let gasTxHash: string | null = null;
+    try {
+      const gasReceipt = await WalletService.sendFromGasTank(wallet.evm_address as Address);
+      gasTxHash = gasReceipt.transactionHash;
+      request.log.info(
+        `Gas transfer confirmed for wallet=${wallet.evm_address}. Tx Hash: ${gasTxHash}. Status: ${gasReceipt.status}`,
+      );
+      if (gasReceipt.status !== "success") {
+        throw new Error(`Gas transaction ${gasTxHash} failed on chain.`);
+      }
+    } catch (gasError) {
+      request.log.error(`Failed to send gas to wallet=${wallet.evm_address} for sweep:`, gasError);
+      alertVendorError(
+        `Failed to send gas to wallet=${wallet.evm_address} for checkout_session_id=${checkout_session_id} and vendor_purchase_id=${wallet.purchase_id}`,
+      );
+      return reply.status(500).send({ error: "Failed to prepare wallet for token sweep (gas transfer failed)." });
+    }
+
+    // 5. Sweep the tokens from the deposit wallet to the offramp wallet
+    if (!wallet.offramp_evm_address) {
+      const error_message = `Offramp EVM address not configured for wallet=${wallet.evm_address}. Cannot sweep tokens.`;
+      request.log.error(error_message);
+      const response_payload: IResponseCheckoutTopup = {
+        vendor_disclaimer: error_message,
+        checkout_session_id,
+        success: false,
+        message: error_message,
+        tracer,
+      };
+      return reply.status(500).send(response_payload);
+    }
+
+    let transferTxHashes: string[] = [];
+    for (const tokenAddress of sweep_tokens || []) {
+      const tokenBalance = await WalletService.getTokenBalance(wallet.evm_address as Address, tokenAddress as Address);
+
+      if (tokenBalance > 0) {
+        try {
+          const amountToSweep = Number(formatUnits(tokenBalance, 6)); // Assuming 6 decimals for all swept tokens
+          const transferReceipt = await WalletService.sendERC20Transfer(
+            tokenAddress as Address,
+            wallet.offramp_evm_address as Address,
+            amountToSweep,
+            wallet.private_key as Hex,
+          );
+          transferTxHashes.push(transferReceipt.transactionHash);
+          request.log.info(
+            `Token ${tokenAddress} transfer confirmed from wallet=${wallet.evm_address} to offramp=${wallet.offramp_evm_address}. Tx Hash: ${transferReceipt.transactionHash}. Status: ${transferReceipt.status}`,
+          );
+          if (transferReceipt.status !== "success") {
+            throw new Error(`Sweep of token ${tokenAddress} failed: transaction reverted on chain.`);
+          }
+        } catch (transferError) {
+          request.log.error(
+            `Failed to sweep token ${tokenAddress} from wallet ${wallet.evm_address} to offramp=${wallet.offramp_evm_address}:`,
+            transferError,
+          );
+          alertVendorError(
+            `Failed to sweep token ${tokenAddress} from wallet ${wallet.evm_address} for checkout_session_id=${checkout_session_id} and vendor_purchase_id=${wallet.purchase_id}.`,
+          );
+          return reply.status(500).send({ error: `Failed to sweep token ${tokenAddress} from deposit wallet.` });
+        }
+      } else {
+        request.log.info(`No balance found for token ${tokenAddress} in wallet ${wallet.evm_address}. Skipping sweep.`);
+      }
+    }
+
+    // 6. Update the USD balance in the CustomerPurchase record
+    const netUsdBalance = Number(formatUnits(currentWalletBalance - gas_transfer_buffer, 6));
+
+    const updatedPurchase = await request.server.db.updateCustomerPurchase(customerPurchase.id, {
+      balance: netUsdBalance,
+      updated_at: Date.now(),
+    });
+
+    if (!updatedPurchase) {
+      const error_message = `Failed to update USD balance for checkout_session_id=${checkout_session_id}. Tokens may have been swept.`;
+      request.log.error(error_message);
+      alertVendorError(error_message);
+      const response_payload: IResponseCheckoutTopup = {
+        vendor_disclaimer: error_message,
+        checkout_session_id,
+        success: false,
+        message: error_message,
+        tracer,
+      };
+      return reply.status(500).send(response_payload);
+    }
+
+    // 7. Construct and send success response
+    const success_message = `Top-up verified, tokens swept, and USD balance updated successfully for checkout_session_id=${checkout_session_id}. Transaction hashes: ${transferTxHashes.join(", ")}. New balance: $${netUsdBalance.toFixed(2)}.`;
+    const response_payload: IResponseCheckoutTopup = {
+      vendor_disclaimer: success_message,
+      checkout_session_id: checkout_session_id,
+      success: true,
+      message: success_message,
+      tracer,
+    };
+
+    return reply.status(200).send(response_payload);
+  } catch (e) {
+    alertVendorError(
+      `Critical error in verifyTopup for checkout_session_id=${checkout_session_id}, vendor_purchase_id=${wallet.purchase_id}: ${e instanceof Error ? e.message : String(e)}`,
+    );
+    return reply.status(500).send({ error: "Internal server error during top-up verification and sweep." });
+  }
+};
+
 export const CRYPTO_WALLET_TOPUP_GIFT_CARD_ONLY = {
   checkout_flow_id: CHECKOUT_OPTION.checkout_flow_id,
   offer_id: CHECKOUT_OPTION.offer_id,
   initCheckout,
   validateCheckout,
   finalizeCheckout,
+  topupCheckout,
 };

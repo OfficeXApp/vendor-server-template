@@ -1,4 +1,4 @@
-// src/handlers/offer/finalize-checkout.ts
+// src/handlers/checkout/checkout-finalize.ts
 
 import { FastifyReply, FastifyRequest } from "fastify";
 import { IRequestCheckoutValidate } from "@officexapp/types";
