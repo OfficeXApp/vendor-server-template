@@ -50,6 +50,7 @@ CREATE TABLE checkout_wallets (
     purchase_id TEXT UNIQUE, -- Optional: Links to a CustomerPurchase if finalized. UNIQUE as one wallet per purchase.
     offramp_evm_address VARCHAR(42), -- Address where funds are moved after verification
     offer_id TEXT, -- ADDED: Column to link to the offers table
+    email TEXT,
     
     -- Foreign key constraint to offer (can be added now as offers table exists)
     CONSTRAINT fk_offer
@@ -129,8 +130,8 @@ CREATE TABLE usage_records (
     purchase_id TEXT NOT NULL, -- Foreign key to the customer_purchases table
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- The time of the usage event (TimescaleDB time column)
     usage_amount NUMERIC(18, 6) NOT NULL, -- The quantity of usage (e.g., GB, API calls)
-    unit TEXT NOT NULL, -- The unit of usage (e.g., 'GB', 'API_CALLS', 'MS') -- CHANGED FROM VARCHAR(50) TO TEXT
-    cost_incurred NUMERIC(18, 6) NOT NULL, -- The cost deducted for this specific usage event
+    usage_unit TEXT NOT NULL, -- The unit of usage (e.g., 'GB', 'API_CALLS', 'MS') -- CHANGED FROM VARCHAR(50) TO TEXT
+    billed_amount NUMERIC(18, 6) NOT NULL, -- The cost deducted for this specific usage event
     description TEXT, -- Description of the usage event (e.g., 'S3 storage usage', 'Gemini API call')
     metadata JSONB, -- Flexible JSON for additional usage details (e.g., S3 bucket name, Gemini model used)
 
@@ -148,8 +149,8 @@ COMMENT ON TABLE usage_records IS 'Time-series records of usage events for custo
 COMMENT ON COLUMN usage_records.purchase_id IS 'Foreign key to the customer purchase this usage belongs to.';
 COMMENT ON COLUMN usage_records.timestamp IS 'The timestamp of the usage event. This is the time-series dimension for TimescaleDB.';
 COMMENT ON COLUMN usage_records.usage_amount IS 'The quantity of usage incurred in this event.';
-COMMENT ON COLUMN usage_records.unit IS 'The unit of the usage amount (e.g., GB, API_CALLS).';
-COMMENT ON COLUMN usage_records.cost_incurred IS 'The cost deducted from the balance for this specific usage event.';
+COMMENT ON COLUMN usage_records.usage_unit IS 'The unit of the usage amount (e.g., GB, API_CALLS).';
+COMMENT ON COLUMN usage_records.billed_amount IS 'The cost deducted from the balance for this specific usage event.';
 COMMENT ON COLUMN usage_records.metadata IS 'Additional JSON metadata for the usage event.';
 
 -- Convert usage_records table to a TimescaleDB hypertable

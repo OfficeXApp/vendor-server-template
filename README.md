@@ -38,6 +38,9 @@ $ docker compose down --volumes
 
 # or restart fresh
 $ docker compose down --volumes && docker compose up --build -d && docker compose logs -f
+
+# enter docker container
+$ docker exec -it vendor-server-app-1 bash
 ```
 
 dashboard frontend for hot reloading in development (in production its handled by docker)
@@ -64,9 +67,9 @@ AWS S3 buckets are tagged with `officex_vendor_purchase_id` tag, which is used f
 
 2. Go to your newly created S3 bucket `officex-vendor-billing-reports-{YOUR_VENDOR_ID}` and add tag `{officex_vendor_purchase_id: "officex_vendor_billing_reports"}`
 
-3. Enable the tag to be used in billing on [aws cost allocation tags page](https://us-east-1.console.aws.amazon.com/costmanagement/home?region=us-east-1#/tags). Depending on your AWS account, the tag might take a few hours to a day to appear.
+3. Enable the tag `officex_vendor_purchase_id` to be used in billing on [aws cost allocation tags page](https://us-east-1.console.aws.amazon.com/costmanagement/home?region=us-east-1#/tags). Depending on your AWS account, the tag might take a few hours to a day to appear.
 
-4. Run the daily script (to be written)
+Your automated billing should now work. A daily cron job will run on this.
 
 ## Routes
 

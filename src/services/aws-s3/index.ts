@@ -10,6 +10,7 @@ import {
   ListMultipartUploadsCommand,
   AbortMultipartUploadCommand,
   PutBucketCorsCommand,
+  GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import {
   IAMClient,
@@ -25,8 +26,18 @@ import {
 } from "@aws-sdk/client-iam";
 import { defaultProvider } from "@aws-sdk/credential-provider-node"; // Correct import for default provider
 import { CheckoutSessionID, DiskTypeEnum, JobRunID, OfferID, RedeemDiskGiftCard_BTOA } from "@officexapp/types";
-import { CustomerPurchaseID } from "../../types/core.types"; // Assuming this path is correct based on your database.ts
-import { LOCAL_DEV_MODE, vendor_customer_dashboard } from "../../constants";
+import { CustomerPurchaseID, UsageRecord } from "../../types/core.types"; // Assuming this path is correct based on your database.ts
+import { LOCAL_DEV_MODE, vendor_customer_dashboard, vendor_server_endpoint } from "../../constants";
+import * as fs from "fs";
+import { parse } from "csv-parse";
+import { DatabaseService } from "../database";
+import * as zlib from "zlib";
+import { pipeline } from "stream/promises";
+import { createWriteStream } from "fs";
+import { mkdir, readdir, unlink, rmdir } from "fs/promises";
+import path from "path";
+import { Readable } from "stream";
+import * as yauzl from "yauzl";
 
 /**
  * Interface for tracking AWS S3 storage resources and associated IAM credentials
@@ -489,6 +500,248 @@ export class AwsService {
     const finalUrl = `${origin}/org/current/redeem/disk-giftcard?redeem=${urlSafeBase64Encode(JSON.stringify(payload))}`;
     return finalUrl;
   }
+
+  /**
+   * Downloads the latest AWS Cost and Usage Report manifest file and all
+   * associated zipped CSV files to a local directory, then unzips them.
+   * @returns An array of relative file paths to the unzipped CSV files.
+   */
+  public async downloadBillingExportFolder(date: Date): Promise<string[]> {
+    console.log(`[AWS Service] Starting download of billing exports from S3...`);
+
+    // 1. **Add this line to ensure the directory exists.**
+    const localExportPath = "./billing-exports";
+    try {
+      await mkdir(localExportPath, { recursive: true });
+      console.log(`[AWS Service] Ensured local directory '${localExportPath}' exists.`);
+    } catch (err) {
+      console.error(`[AWS Service] Failed to create local directory:`, err);
+      throw err;
+    }
+    await this.cleanupBillingExportFolder(); // Ensure the folder is clean before starting
+
+    const reportName = "officex-vendor-billing-report";
+    const dateRange = getBillingPeriodRange(date);
+    const manifestKey = `costreports/${reportName}/${dateRange}/${reportName}-Manifest.json`;
+
+    console.log(`[AWS Service] Looking for manifest at key: ${manifestKey}`);
+
+    // 1. Download the manifest file from the stable key
+    const manifestCommand = new GetObjectCommand({
+      Bucket: process.env.BILLING_BUCKET_NAME,
+      Key: manifestKey,
+    });
+
+    let manifestData;
+    try {
+      const response = await this.s3Client.send(manifestCommand);
+      manifestData = await response.Body?.transformToString();
+    } catch (error) {
+      console.error(`[AWS Service] Failed to download manifest file:`, error);
+      throw new Error("Failed to download AWS billing manifest.");
+    }
+
+    if (!manifestData) {
+      throw new Error("Manifest file is empty or could not be transformed.");
+    }
+
+    const manifest = JSON.parse(manifestData);
+    // The `reportKeys` array from the manifest gives you the full, unstable paths
+    const reportKeys = manifest.reportKeys as string[];
+    const csvFilePaths: string[] = [];
+
+    for (const reportKey of reportKeys) {
+      const fileName = path.basename(reportKey);
+      const localCsvPath = path.join(localExportPath, fileName.replace(/\.zip$/, ""));
+
+      console.log(`[AWS Service] Downloading and unzipping: ${reportKey}`);
+
+      const getObjectCommand = new GetObjectCommand({
+        Bucket: process.env.BILLING_BUCKET_NAME,
+        Key: reportKey,
+      });
+
+      try {
+        const response = await this.s3Client.send(getObjectCommand);
+
+        if (!response.Body) {
+          console.warn(`[AWS Service] S3 object body is empty for key: ${reportKey}. Skipping.`);
+          continue;
+        }
+
+        const contentLength = response.ContentLength;
+        console.log(`[AWS Service] File size: ${contentLength} bytes. Attempting to decompress with yauzl.`);
+
+        // Read the S3 stream into a buffer first
+        const s3Stream = response.Body as Readable;
+        const chunks = [];
+        for await (const chunk of s3Stream) {
+          chunks.push(chunk);
+        }
+        const buffer = Buffer.concat(chunks);
+
+        // Decompress the zip file from the buffer using yauzl
+        await new Promise<void>((resolve, reject) => {
+          yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, zipfile) => {
+            if (err) {
+              return reject(err);
+            }
+            zipfile.on("entry", (entry) => {
+              // Extract only the CSV file from the zip archive
+              if (!entry.fileName.endsWith(".csv")) {
+                zipfile.readEntry();
+                return;
+              }
+              zipfile.openReadStream(entry, (err, readStream) => {
+                if (err) {
+                  return reject(err);
+                }
+                const writeStream = createWriteStream(localCsvPath);
+                writeStream.on("finish", () => {
+                  console.log(`[AWS Service] Successfully unzipped and saved: ${localCsvPath}`);
+                  csvFilePaths.push(localCsvPath);
+                  zipfile.readEntry(); // Read the next entry
+                  resolve();
+                });
+                writeStream.on("error", reject);
+                readStream.pipe(writeStream);
+              });
+            });
+            zipfile.readEntry();
+          });
+        });
+      } catch (error: any) {
+        console.error(`[AWS Service] Failed to download or unzip ${reportKey}:`, error);
+        console.error(`[AWS Service] Error details:`, error.stack);
+      }
+    }
+
+    console.log(`[AWS Service] Finished downloading and unzipping all billing exports.`);
+    return csvFilePaths;
+  }
+
+  /**
+   * Deletes all files within the local billing-exports folder.
+   * This function ensures the directory is empty before a new download.
+   */
+  public async cleanupBillingExportFolder(): Promise<void> {
+    console.log(`[AWS Service] Cleaning up local billing exports folder: ${"./billing-exports"}`);
+    try {
+      const files = await readdir("./billing-exports");
+      if (files.length === 0) {
+        console.log(`[AWS Service] Folder is already empty.`);
+        return;
+      }
+
+      for (const file of files) {
+        const filePath = path.join("./billing-exports", file);
+        await unlink(filePath);
+        console.log(`[AWS Service] Deleted file: ${filePath}`);
+      }
+
+      // After deleting all files, you can optionally remove the directory itself
+      // and re-create it on the next run, but just deleting the files is sufficient
+      // for this use case.
+      console.log(`[AWS Service] Successfully cleaned up the folder.`);
+    } catch (error: any) {
+      if (error.code === "ENOENT") {
+        console.log(`[AWS Service] Folder does not exist, no cleanup needed.`);
+      } else {
+        console.error(`[AWS Service] Failed to cleanup billing exports folder:`, error);
+        throw error;
+      }
+    }
+  }
+
+  // Process the S3 billing file
+  public async processS3BillingFile(filePath: string, db: DatabaseService): Promise<void> {
+    console.log(`[AwsService] Starting to process S3 billing file: ${filePath}`);
+    let processedRows = 0;
+
+    try {
+      const parser = fs.createReadStream(filePath).pipe(
+        parse({
+          columns: true,
+          skip_empty_lines: true,
+        }),
+      );
+
+      for await (const record of parser) {
+        const resourceTag = record["resourceTags/user:officex_vendor_purchase_id"];
+
+        if (resourceTag && resourceTag.startsWith("CustomerPurchaseID_")) {
+          processedRows++;
+          console.log(`[AwsService] Processing valid row for purchase ID: ${resourceTag}`);
+
+          try {
+            const purchaseId: CustomerPurchaseID = resourceTag;
+            const customerPurchase = await db.getCustomerPurchaseById(purchaseId);
+
+            if (!customerPurchase) {
+              console.warn(`[AwsService] Customer purchase with ID ${purchaseId} not found. Skipping row.`);
+              continue; // Skip this row and move to the next one
+            }
+
+            const vendorApiKey = customerPurchase.vendor_billing_api_key;
+            const unitCost = parseFloat(record["lineItem/BlendedRate"]);
+            const usageAmount = parseFloat(record["lineItem/UsageAmount"]);
+            const billedCost = parseFloat(record["lineItem/BlendedCost"]);
+
+            // Apply the 36% markup
+            const billedAmountWithMarkup = billedCost * 1.36;
+
+            const usageRecord: UsageRecord = {
+              purchase_id: purchaseId,
+              timestamp: new Date(record["bill/BillingPeriodStartDate"]),
+              usage_amount: usageAmount,
+              usage_unit: record["pricing/unit"],
+              billed_amount: billedAmountWithMarkup,
+              description: record["lineItem/LineItemDescription"],
+            };
+
+            await db.addUsageRecordAndDeductBalance(usageRecord);
+
+            console.log(
+              `[AwsService] Successfully metered usage for ${purchaseId}. Billed amount: ${billedAmountWithMarkup.toFixed(6)} USD.`,
+            );
+          } catch (rowError) {
+            console.error(`[AwsService] Error processing row for purchase ID ${resourceTag}:`, rowError);
+          }
+        }
+      }
+      console.log(`[AwsService] Finished processing billing file. Processed ${processedRows} valid rows.`);
+    } catch (fileError) {
+      console.error(`[AwsService] Failed to process billing file:`, fileError);
+      throw fileError;
+    }
+  }
+
+  public async runDailyBillingJob(db: DatabaseService, date: Date): Promise<void> {
+    console.log(`[AWS Service] Initiating daily billing job...`);
+    try {
+      // 1. Download the latest billing report files
+      const csvFilePaths = await this.downloadBillingExportFolder(date);
+      console.log(`[AWS Service] Found and downloaded ${csvFilePaths.length} CSV files.`);
+
+      // 2. Loop through the downloaded files and process each one
+      for (const filePath of csvFilePaths) {
+        await this.processS3BillingFile(filePath, db);
+      }
+
+      // 3. Clean up the local folder after processing
+      await this.cleanupBillingExportFolder();
+      console.log(`[AWS Service] Daily billing job completed successfully. 🎉`);
+    } catch (error) {
+      console.error(`[AWS Service] Daily billing job failed:`, error);
+      // It's good practice to ensure cleanup happens even on error
+      try {
+        await this.cleanupBillingExportFolder();
+      } catch (cleanupError) {
+        console.error(`[AWS Service] Cleanup after failure also failed:`, cleanupError);
+      }
+      throw error;
+    }
+  }
 }
 
 // Encode: Direct URL-safe Base64
@@ -505,3 +758,36 @@ export function urlSafeBase64Encode(str: string) {
   // Make URL-safe by replacing characters
   return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
+
+// this function returns the previous days month range, since cron job is expected to run at 3:00 AM UTC
+export const getBillingPeriodRange = (date: Date) => {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+
+  const startDate = new Date(Date.UTC(year, month, 1));
+  const endDate = new Date(Date.UTC(year, month + 1, 1));
+
+  const format = (d: Date) => {
+    const y = d.getUTCFullYear();
+    const m = (d.getUTCMonth() + 1).toString().padStart(2, "0");
+    const day = d.getUTCDate().toString().padStart(2, "0");
+    return `${y}${m}${day}`;
+  };
+
+  const startFormatted = format(startDate);
+  const endFormatted = format(endDate);
+
+  return `${startFormatted}-${endFormatted}`;
+};
+
+const getFormattedTimestamp = () => {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = (now.getUTCMonth() + 1).toString().padStart(2, "0");
+  const day = now.getUTCDate().toString().padStart(2, "0");
+  const hours = now.getUTCHours().toString().padStart(2, "0");
+  const minutes = now.getUTCMinutes().toString().padStart(2, "0");
+  const seconds = now.getUTCSeconds().toString().padStart(2, "0");
+
+  return `${year}${month}${day}T${hours}${minutes}${seconds}Z`;
+};

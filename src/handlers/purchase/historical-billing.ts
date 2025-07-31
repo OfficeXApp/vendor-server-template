@@ -41,11 +41,11 @@ export const historical_billing_handler = async (request: FastifyRequest, reply:
     );
 
     // Format timestamps for better readability in JSON response
-    // And ensure total_cost_incurred (USD charge amount) is included, which it already is.
+    // And ensure total_billed_amount (USD charge amount) is included, which it already is.
     const formattedHistory = history.map((entry) => ({
       time_bucket: entry.time_bucket.toISOString(),
       total_usage_amount: entry.total_usage_amount,
-      total_cost_incurred: entry.total_cost_incurred, // This is the USD charge amount
+      total_billed_amount: entry.total_billed_amount, // This is the USD charge amount
       purchase_id: entry.purchase_id,
     }));
 

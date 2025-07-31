@@ -299,7 +299,7 @@ export class DatabaseService {
       // 1. Insert the usage record
       const insertQuery = `
         INSERT INTO usage_records (
-          purchase_id, timestamp, usage_amount, unit, cost_incurred, description, metadata
+          purchase_id, timestamp, usage_amount, usage_unit, billed_amount, description, metadata
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *;
@@ -308,8 +308,8 @@ export class DatabaseService {
         usage.purchase_id,
         usage.timestamp, // pg client handles Date objects for TIMESTAMPTZ
         usage.usage_amount,
-        usage.unit,
-        usage.cost_incurred,
+        usage.usage_unit,
+        usage.billed_amount,
         usage.description,
         usage.metadata,
       ];
@@ -327,7 +327,7 @@ export class DatabaseService {
       `;
       const balanceResult = await client.query<CustomerPurchase>(updateBalanceQuery, [
         usage.purchase_id,
-        usage.cost_incurred,
+        usage.billed_amount,
       ]);
 
       if (balanceResult.rows.length === 0) {
@@ -379,7 +379,7 @@ export class DatabaseService {
       SELECT
         time_bucket($1, timestamp) AS time_bucket,
         SUM(usage_amount) AS total_usage_amount,
-        SUM(cost_incurred) AS total_cost_incurred,
+        SUM(cost_incurred) AS total_billed_amount,
         purchase_id
       FROM usage_records
       WHERE purchase_id = $2

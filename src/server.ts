@@ -8,8 +8,7 @@ import * as path from "path";
 import fp from "fastify-plugin";
 import fastifyCors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
-// import fastifyHttpProxy from "@fastify/http-proxy"; // REMOVE THIS LINE - no longer used for proxying
-// import { LOCAL_DEV_MODE } from "./constants"; // REMOVE THIS LINE - no longer used if removed conditional logic
+import fastifyCron from "fastify-cron";
 
 import { DatabaseService } from "./services/database";
 import {
@@ -34,7 +33,7 @@ import { historical_billing_handler } from "./handlers/purchase/historical-billi
 import { authenticateCustomerBillingCheck, authenticateVendorUpdateBilling } from "./services/auth";
 import { MeterService } from "./services/meter";
 import { checkout_topup_handler } from "./handlers/checkout/checkout-topup";
-import { AwsService } from "./services/aws-s3/aws-s3";
+import { AwsService } from "./services/aws-s3";
 
 // Extend FastifyInstance to include our decorated 'db' property
 declare module "fastify" {
@@ -129,6 +128,28 @@ const start = async () => {
   fastify.addHook("onClose", async () => {
     await fastify.db.disconnect();
     fastify.log.info("Database pool disconnected.");
+  });
+
+  await fastify.register(fastifyCron, {
+    jobs: [
+      {
+        cronTime: "0 3 * * *", // Run every day at 3:00 AM UTC for previous day data. this ensures we have the complete data for the previous day
+        onTick: async (server) => {
+          server.log.info("Cron job started: Running daily billing job.");
+          try {
+            const today = new Date();
+            const yesterdayTimestamp = today.getTime() - 24 * 60 * 60 * 1000;
+            const yesterday = new Date(yesterdayTimestamp);
+            await server.aws.runDailyBillingJob(server.db, yesterday);
+            server.log.info("Cron job finished: Daily billing job complete. ✅");
+          } catch (error) {
+            server.log.error("Cron job failed: Error during daily billing job.", error);
+          }
+        },
+        start: true, // Start the job automatically
+        name: "daily-billing-job",
+      },
+    ],
   });
 
   fastify.get(HEALTH_ROUTE, async (request, reply) => {

@@ -52,6 +52,7 @@ services:
       - DATABASE_URL=${DATABASE_URL} # Read from .env
       - CHAIN_EXPLORER_URL=${CHAIN_EXPLORER_URL} # Read from .env
       - DEFAULT_BLOCK_CONFIRMATIONS=${DEFAULT_BLOCK_CONFIRMATIONS} # Read from .env
+      - BILLING_BUCKET_NAME=${BILLING_BUCKET_NAME}
       # Database connection string for your Node.js app
       # IMPORTANT: Use the service name 'db' as the hostname for inter-container communication
       - DATABASE_URL=${DATABASE_URL}

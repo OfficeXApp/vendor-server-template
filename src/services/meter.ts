@@ -26,27 +26,10 @@ export class MeterService {
    * @returns The newly created UsageRecord.
    * @throws Error if the operation fails (e.g., database error, purchase not found).
    */
-  public async recordUsage(
-    purchase_id: CustomerPurchaseID,
-    usage_amount: number,
-    unit: string,
-    cost_incurred: number,
-    description?: string,
-    metadata?: Record<string, any>,
-  ): Promise<UsageRecord> {
-    const newUsageRecord: UsageRecord = {
-      purchase_id,
-      timestamp: new Date(), // Current time
-      usage_amount,
-      unit,
-      cost_incurred,
-      description,
-      metadata,
-    };
-
+  public async recordUsage(record: UsageRecord): Promise<UsageRecord> {
     // The database service handles the atomic insertion and balance deduction,
     // including trigger checks and warnings.
-    const createdRecord = await this.db.addUsageRecordAndDeductBalance(newUsageRecord);
+    const createdRecord = await this.db.addUsageRecordAndDeductBalance(record);
 
     return createdRecord;
   }

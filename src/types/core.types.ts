@@ -98,8 +98,8 @@ export interface UsageRecord {
   purchase_id: CustomerPurchaseID;
   timestamp: Date; // Use Date object for TIMESTAMPTZ
   usage_amount: number;
-  unit: string;
-  cost_incurred: number;
+  usage_unit: string;
+  billed_amount: number;
   description?: string;
   metadata?: Record<string, any>; // JSONB type
 }
@@ -108,6 +108,6 @@ export interface UsageRecord {
 export interface HistoricalBillingEntry {
   time_bucket: Date; // The start of the time bucket
   total_usage_amount: number;
-  total_cost_incurred: number;
+  total_billed_amount: number;
   purchase_id: CustomerPurchaseID;
 }

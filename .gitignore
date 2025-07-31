@@ -70,3 +70,5 @@ dist
 
 prompts/*
 data/*
+
+src/services/aws-s3/billing-exports/*
