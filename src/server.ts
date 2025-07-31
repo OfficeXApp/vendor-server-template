@@ -34,12 +34,14 @@ import { historical_billing_handler } from "./handlers/purchase/historical-billi
 import { authenticateCustomerBillingCheck, authenticateVendorUpdateBilling } from "./services/auth";
 import { MeterService } from "./services/meter";
 import { checkout_topup_handler } from "./handlers/checkout/checkout-topup";
+import { AwsService } from "./services/aws-s3/aws-s3";
 
 // Extend FastifyInstance to include our decorated 'db' property
 declare module "fastify" {
   interface FastifyInstance {
     db: DatabaseService;
     meter: MeterService;
+    aws: AwsService;
   }
 }
 
@@ -93,7 +95,12 @@ const start = async () => {
 
     // Initialize MeterService and decorate Fastify instance
     const meterService = new MeterService(databaseService);
-    fastify.decorate("meterService", meterService);
+    fastify.decorate("meter", meterService);
+
+    // Initialize AwsService and decorate Fastify instance
+    const AWS_REGION = process.env.AWS_REGION || "us-east-1"; // Get region from env var
+    const awsService = new AwsService(AWS_REGION);
+    fastify.decorate("aws", awsService); // Decorate as 'awsService'
 
     // Ensure database disconnects on server close
     fastify.addHook("onClose", async (instance) => {
@@ -124,8 +131,8 @@ const start = async () => {
     fastify.log.info("Database pool disconnected.");
   });
 
-  fastify.get(HEALTH_ROUTE, (request, reply) => {
-    reply.send({ status: "ok - healthy 👌" });
+  fastify.get(HEALTH_ROUTE, async (request, reply) => {
+    reply.send({ status: `ok - healthy 👌` });
   });
   fastify.get(APPSTORE_SUGGEST_ROUTE, appstore_suggest_handler);
   fastify.get(APPSTORE_LIST_ROUTE, appstore_list_handler);

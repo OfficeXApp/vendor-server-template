@@ -359,11 +359,21 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
       );
       return reply.status(500).send({ error: "Failed to transfer funds from wallet to offramp." });
     }
-    // if offramp transfer was successful, return success
-    const storage_redeem_link = LOCAL_DEV_MODE
-      ? `http://localhost:5173/org/current/redeem/disk-giftcard?redeem=eyJuYW1lIjoiQW1hem9uIERpc2siLCJkaXNrX3R5cGUiOiJBV1NfQlVDS0VUIiwicHVibGljX25vdGUiOiIiLCJhdXRoX2pzb24iOiJ7XG4gIFwiZW5kcG9pbnRcIjogXCJodHRwczovL3MzLmFtYXpvbmF3cy5jb21cIixcbiAgXCJhY2Nlc3Nfa2V5XCI6IFwiQUtJQTZQSDVMWFJVSEJQNEJKNVhcIixcbiAgXCJzZWNyZXRfa2V5XCI6IFwiejFTaHZSN2ZtU1NVMHNhNG5aRDhiU0FEQVFndGFCak9JV0V4cnJRRVwiLFxuICBcImJ1Y2tldFwiOiBcIm9meC1idWNrZXQtZnJpZW5kLTI4OFwiLFxuICBcInJlZ2lvblwiOiBcInVzLWVhc3QtMVwiXG59IiwiZW5kcG9pbnQiOiIifQ`
-      : `https://officex.app/org/current/redeem/disk-giftcard?redeem=eyJuYW1lIjoiQW1hem9uIERpc2siLCJkaXNrX3R5cGUiOiJBV1NfQlVDS0VUIiwicHVibGljX25vdGUiOiIiLCJhdXRoX2pzb24iOiJ7XG4gIFwiZW5kcG9pbnRcIjogXCJodHRwczovL3MzLmFtYXpvbmF3cy5jb21cIixcbiAgXCJhY2Nlc3Nfa2V5XCI6IFwiQUtJQTZQSDVMWFJVSEJQNEJKNVhcIixcbiAgXCJzZWNyZXRfa2V5XCI6IFwiejFTaHZSN2ZtU1NVMHNhNG5aRDhiU0FEQVFndGFCak9JV0V4cnJRRVwiLFxuICBcImJ1Y2tldFwiOiBcIm9meC1idWNrZXQtZnJpZW5kLTI4OFwiLFxuICBcInJlZ2lvblwiOiBcInVzLWVhc3QtMVwiXG59IiwiZW5kcG9pbnQiOiIifQ`;
-    const success_message = `Successful Purchase! You may now redeem your storage gift card or give it to a friend. Here is the redeem link: ${storage_redeem_link}`;
+    // if offramp transfer was successful, create the S3 bucket
+
+    const storageGiftCard = await request.server.aws.deployNewS3Bucket(
+      `officex-${createdPurchase.id}`,
+      `officex-${createdPurchase.id}`,
+      `officex-${createdPurchase.id}`,
+      {
+        officex_purchase_id: createdPurchase.officex_purchase_id,
+        purchase_id: createdPurchase.id,
+        offer_id: wallet.offer_id,
+        checkout_session_id: createdPurchase.checkout_session_id,
+      },
+    );
+
+    const success_message = `Successful Purchase! You may now redeem your storage gift card or give it to a friend. Here is the redeem link: ${storageGiftCard.redeem_url}`;
     const response_payload: IResponseCheckoutFinalize = {
       success: true,
       message: success_message,
@@ -373,7 +383,7 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
         checkout_session_id,
         checkout_flow_id,
         // redeem_code?: string;
-        skip_to_final_redirect: storage_redeem_link,
+        skip_to_final_redirect: storageGiftCard.redeem_url,
         skip_to_final_cta: "View Giftcard",
         vendor_name: "Amazon",
         vendor_id: process.env.VENDOR_ID,
@@ -385,7 +395,7 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
         title: "Amazon S3 Storage Giftcard | Base L2 Topup Wallet",
         subtitle: "Amazon S3 Storage Giftcard | Base L2 Topup Wallet",
         pricing: "$0.01/GB/month storage, $0.01/GB egress",
-        vendor_notes: `Share giftcard with a friend: ${storage_redeem_link}`,
+        vendor_notes: `Share giftcard with a friend: ${storageGiftCard.redeem_url}`,
       },
     };
 

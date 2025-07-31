@@ -34,6 +34,10 @@ services:
       - NODE_ENV=${NODE_ENV} # Read from .env
       - DATA_DIR=${DATA_DIR} # Read from .env (for your app's data)
       - PORT=${PORT:-3001} # Read from .env, with default
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - VENDOR_NAME=${VENDOR_NAME}
       - SERVER_DOMAIN=${SERVER_DOMAIN} # Read from .env
       - SANITY_CHECK_ENV=${SANITY_CHECK_ENV} # Read from .env
       - CHAIN_NAME=${CHAIN_NAME} # Read from .env

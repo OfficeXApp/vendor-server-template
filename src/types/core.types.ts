@@ -1,5 +1,6 @@
 import { CheckoutFlowID, CheckoutSessionID, DriveID, JobRunID, JobRunStatus, UserID } from "@officexapp/types";
 import { v4 as uuidv4 } from "uuid";
+import { AmazonS3StorageGiftcard } from "./external.types";
 
 export enum IDPrefixEnum {
   CustomerPurchase = "CustomerPurchaseID_",
@@ -78,7 +79,7 @@ export interface CustomerPurchase {
   created_at: number;
   updated_at: number;
   tracer?: string;
-  metadata?: Record<string, any>; // Changed from 'string' to 'Record<string, any>' for JSONB
+  metadata?: Record<string, any> | AmazonS3StorageGiftcard;
 }
 
 // this is simply saved as a json file, not in database
