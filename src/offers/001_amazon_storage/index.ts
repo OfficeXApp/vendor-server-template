@@ -73,18 +73,19 @@ const initCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
         chain_explorer_url: process.env.CHAIN_EXPLORER_URL || "",
         vendor_disclaimer: "Only send USDC on BaseL2 to this wallet. Any other token will be lost.",
       },
-      requirements: [
-        {
-          id: "disk_name",
-          title: "Disk Name",
-          explanation: "Enter your desired disk name",
-          type: "text",
-          required: true,
-          defaultValue: "Amazon S3",
-          placeholder: "Enter your desired disk name",
-          suffix: "Disk Name",
-        },
-      ],
+      requirements: [],
+      //  [
+      //   {
+      //     id: "disk_name",
+      //     title: "Disk Name",
+      //     explanation: "Enter your desired disk name",
+      //     type: "text",
+      //     required: true,
+      //     defaultValue: "Amazon S3",
+      //     placeholder: "Enter your desired disk name",
+      //     suffix: "Disk Name",
+      //   },
+      // ],
     };
 
     return reply.status(200).send(response_payload);

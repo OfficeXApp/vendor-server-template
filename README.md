@@ -58,6 +58,9 @@ npm run dev
 docker-compose -f docker-compose.prod.yml up --build -d
 # view logs
 docker-compose -f docker-compose.prod.yml logs -f
+
+# safe restart
+docker-compose -f docker-compose.prod.yml restart
 ```
 
 ### Cost Reports via Storage Lens

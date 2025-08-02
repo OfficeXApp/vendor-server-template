@@ -35,6 +35,7 @@ import { MeterService } from "./services/meter";
 import { checkout_topup_handler } from "./handlers/checkout/checkout-topup";
 import { AwsService } from "./services/aws-s3";
 import { get_purchase_handler } from "./handlers/purchase/get-purchase";
+import { validate_auth_handler } from "./handlers/purchase/validate-auth";
 
 // Extend FastifyInstance to include our decorated 'db' property
 declare module "fastify" {
@@ -61,6 +62,7 @@ const CHECKOUT_TOPUP_ROUTE = "/v1/checkout/topup";
 const PURCHASE_VIEW_ROUTE = "/v1/purchase/:purchase_id";
 const PURCHASE_METER_USAGE_ROUTE = "/v1/purchase/:purchase_id/meter-usage";
 const PURCHASE_HISTORICAL_BILLING_ROUTE = "/v1/purchase/:purchase_id/historical-billing";
+const PURCHASE_VALIDATE_AUTH_ROUTE = "/v1/purchase/:purchase_id/validate-auth";
 
 // Customer Dashboard Route
 const CUSTOMER_DASHBOARD_ROUTE = "/v1/dashboard/customer";
@@ -171,6 +173,7 @@ const start = async () => {
     { preHandler: [authenticateCustomerBillingCheck] },
     historical_billing_handler,
   );
+  fastify.post(PURCHASE_VALIDATE_AUTH_ROUTE, validate_auth_handler);
 
   const customerDashboardPath = path.join(__dirname, "dashboard", "customer");
 
