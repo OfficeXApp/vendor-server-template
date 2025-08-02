@@ -12,6 +12,7 @@
   "dependencies": {
     "@ant-design/charts": "^2.6.1",
     "@ant-design/icons": "^6.0.0",
+    "@officexapp/types": "^0.0.183",
     "antd": "^5.26.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

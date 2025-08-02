@@ -34,6 +34,7 @@ import { authenticateCustomerBillingCheck, authenticateVendorUpdateBilling } fro
 import { MeterService } from "./services/meter";
 import { checkout_topup_handler } from "./handlers/checkout/checkout-topup";
 import { AwsService } from "./services/aws-s3";
+import { get_purchase_handler } from "./handlers/purchase/get-purchase";
 
 // Extend FastifyInstance to include our decorated 'db' property
 declare module "fastify" {
@@ -163,7 +164,7 @@ const start = async () => {
   fastify.post(CHECKOUT_VERIFY_ROUTE, verify_deposit_wallet_handler);
   fastify.post(CHECKOUT_FINALIZE_ROUTE, finalize_checkout_handler);
   fastify.post(CHECKOUT_TOPUP_ROUTE, checkout_topup_handler);
-  // fastify.get(PURCHASE_VIEW_ROUTE, { preHandler: [authenticateCustomerBillingCheck] }, get_purchase_handler);
+  fastify.get(PURCHASE_VIEW_ROUTE, { preHandler: [authenticateCustomerBillingCheck] }, get_purchase_handler);
   fastify.post(PURCHASE_METER_USAGE_ROUTE, { preHandler: [authenticateVendorUpdateBilling] }, meter_usage_handler);
   fastify.post(
     PURCHASE_HISTORICAL_BILLING_ROUTE,

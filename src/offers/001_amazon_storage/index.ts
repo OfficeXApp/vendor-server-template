@@ -24,7 +24,7 @@ const minTargetBalance = BigInt(0.5 * 1e6); // 0.01 USDC
 const gas_transfer_buffer = BigInt(0.4 * 1e6); // 0.10 USDC ($0.10 to refuel gas, $0.20 of gas, $0.10 for transfer out)
 
 const initCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
-  const { checkout_flow_id, org_id, user_id, tracer } = request.body as IRequestCheckoutInit;
+  const { checkout_flow_id, org_id, user_id, tracer, email } = request.body as IRequestCheckoutInit;
   const checkout_session_id = GenerateID.CheckoutSession();
   const tracer_id = tracer || GenerateID.Tracer();
 
@@ -39,6 +39,7 @@ const initCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
       `Deposit wallet for offer ${CRYPTO_WALLET_TOPUP_GIFT_CARD_ONLY.offer_id} - Initiated by user_id=${user_id}, org_id=${org_id}, checkout_session_id=${checkout_session_id}, tracer=${tracer}`,
       // @ts-ignore
       process.env.VENDOR_OFFRAMP_WALLET_ADDRESS || "",
+      email,
     );
 
     const response_payload: IResponseCheckoutInit_Crypto = {
@@ -53,11 +54,11 @@ const initCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
       finalization_endpoint: `${vendor_server_endpoint}/v1/checkout/finalize`,
       final_cta: "Claim Giftcard",
       post_payment: {
-        vendor_disclaimer:
-          "The Amazon S3 Storage Giftcard will be shared with you here as a link. You will be able to access it, but your organization owner may need to grant other users access.",
-        needs_cloud_officex: true,
-        auth_installation_url: "http://localhost:3002/officex/install/click-worker-complex-task",
-        verify_installation_url: "https://google.com",
+        // vendor_disclaimer:
+        //   "The Amazon S3 Storage Giftcard will be shared with you here as a link. You will be able to access it, but your organization owner may need to grant other users access.",
+        // needs_cloud_officex: true,
+        // auth_installation_url: "http://localhost:3002/officex/install/click-worker-complex-task",
+        // verify_installation_url: "https://google.com",
       },
       crypto_checkout: {
         receiving_address: createdWallet.evm_address,
@@ -362,9 +363,9 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
     // if offramp transfer was successful, create the S3 bucket
 
     const storageGiftCard = await request.server.aws.deployNewS3Bucket(
-      `officex-${createdPurchase.id}`,
-      `officex-${createdPurchase.id}`,
-      `officex-${createdPurchase.id}`,
+      `officex-${createdPurchase.id}`.toLowerCase().replace("_", "-"),
+      `officex-${createdPurchase.id}`.toLowerCase().replace("_", "-"),
+      `officex-${createdPurchase.id}`.toLowerCase().replace("_", "-"),
       {
         officex_purchase_id: createdPurchase.officex_purchase_id,
         purchase_id: createdPurchase.id,
@@ -426,6 +427,7 @@ const topupCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
         success: false,
         message: error_message,
         tracer,
+        updatedValue: 0,
       };
       return reply.status(404).send(response_payload);
     }
@@ -446,11 +448,27 @@ const topupCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
         vendor_disclaimer: error_message,
         checkout_session_id,
         tracer,
+        updatedValue: Number(formatUnits(currentWalletBalance, 6)),
       };
       return reply.status(200).send(response_payload);
     }
 
-    // 4. Send gas to the deposit wallet if needed for the sweep transaction
+    // 5. Sweep the tokens from the deposit wallet to the offramp wallet
+    if (!wallet.offramp_evm_address) {
+      const error_message = `Offramp EVM address not configured for wallet=${wallet.evm_address}. Cannot sweep tokens.`;
+      request.log.error(error_message);
+      const response_payload: IResponseCheckoutTopup = {
+        vendor_disclaimer: error_message,
+        checkout_session_id,
+        success: false,
+        message: error_message,
+        tracer,
+        updatedValue: Number(formatUnits(currentWalletBalance, 6)),
+      };
+      return reply.status(500).send(response_payload);
+    }
+
+    // 6. Send gas to the deposit wallet if needed for the sweep transaction
     let gasTxHash: string | null = null;
     try {
       const gasReceipt = await WalletService.sendFromGasTank(wallet.evm_address as Address);
@@ -467,20 +485,6 @@ const topupCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
         `Failed to send gas to wallet=${wallet.evm_address} for checkout_session_id=${checkout_session_id} and vendor_purchase_id=${wallet.purchase_id}`,
       );
       return reply.status(500).send({ error: "Failed to prepare wallet for token sweep (gas transfer failed)." });
-    }
-
-    // 5. Sweep the tokens from the deposit wallet to the offramp wallet
-    if (!wallet.offramp_evm_address) {
-      const error_message = `Offramp EVM address not configured for wallet=${wallet.evm_address}. Cannot sweep tokens.`;
-      request.log.error(error_message);
-      const response_payload: IResponseCheckoutTopup = {
-        vendor_disclaimer: error_message,
-        checkout_session_id,
-        success: false,
-        message: error_message,
-        tracer,
-      };
-      return reply.status(500).send(response_payload);
     }
 
     let transferTxHashes: string[] = [];
@@ -520,9 +524,10 @@ const topupCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
 
     // 6. Update the USD balance in the CustomerPurchase record
     const netUsdBalance = Number(formatUnits(currentWalletBalance - gas_transfer_buffer, 6));
+    const updatedUsdBalance = wallet.latest_usd_balance + netUsdBalance;
 
     const updatedPurchase = await request.server.db.updateCustomerPurchase(customerPurchase.id, {
-      balance: netUsdBalance,
+      balance: updatedUsdBalance,
       updated_at: Date.now(),
     });
 
@@ -536,6 +541,7 @@ const topupCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
         success: false,
         message: error_message,
         tracer,
+        updatedValue: wallet.latest_usd_balance,
       };
       return reply.status(500).send(response_payload);
     }
@@ -548,6 +554,7 @@ const topupCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
       success: true,
       message: success_message,
       tracer,
+      updatedValue: updatedUsdBalance,
     };
 
     return reply.status(200).send(response_payload);

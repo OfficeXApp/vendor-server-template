@@ -43,6 +43,7 @@ export interface CheckoutWallet {
   metadata?: Record<string, any>; // Changed from 'string' to 'Record<string, any>' for JSONB
   purchase_id?: CustomerPurchaseID;
   offramp_evm_address?: string;
+  email?: string;
 }
 
 // this resides in postgres

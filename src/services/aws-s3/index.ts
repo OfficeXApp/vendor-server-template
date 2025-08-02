@@ -232,6 +232,9 @@ export class AwsService {
       };
     }
 
+    console.log(`bucketName`, bucketName);
+    console.log(`createBucketConfig`, createBucketConfig);
+
     const command = new CreateBucketCommand({
       Bucket: bucketName,
       ...createBucketConfig,
