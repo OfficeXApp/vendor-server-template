@@ -2,14 +2,15 @@
 import { Pool, QueryResult, QueryResultRow } from "pg";
 import {
   Offer,
-  DepositWallet,
+  CheckoutWallet,
   CustomerPurchase,
-  OfferSKU,
+  OfferID,
   CustomerPurchaseID,
-  DepositWalletID,
+  CheckoutWalletID,
   UsageRecord,
   HistoricalBillingEntry,
 } from "../types/core.types"; // Adjust path as needed
+import { CheckoutSessionID } from "@officexapp/types";
 
 export class DatabaseService {
   private pool: Pool;
@@ -54,10 +55,7 @@ export class DatabaseService {
    * @param params Optional array of query parameters.
    * @returns The query result.
    */
-  public async query<T extends QueryResultRow>(
-    text: string,
-    params?: any[]
-  ): Promise<QueryResult<T>> {
+  public async query<T extends QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>> {
     return this.pool.query<T>(text, params);
   }
 
@@ -82,7 +80,7 @@ export class DatabaseService {
     return result.rows[0];
   }
 
-  public async getOfferById(id: OfferSKU): Promise<Offer | null> {
+  public async getOfferById(id: OfferID): Promise<Offer | null> {
     const query = "SELECT * FROM offers WHERE id = $1;";
     const result = await this.query<Offer>(query, [id]);
     return result.rows[0] || null;
@@ -94,18 +92,16 @@ export class DatabaseService {
     return result.rows;
   }
 
-  // --- DepositWallet CRUD Operations ---
+  // --- CheckoutWallet CRUD Operations ---
 
-  public async createDepositWallet(
-    wallet: DepositWallet
-  ): Promise<DepositWallet> {
+  public async createCheckoutWallet(wallet: CheckoutWallet): Promise<CheckoutWallet> {
     const query = `
-      INSERT INTO deposit_wallets (
+      INSERT INTO checkout_wallets (
         id, title, description, evm_address, private_key, seed_phrase,
         latest_usd_balance, created_at, updated_at, tracer, metadata,
-        purchase_id, offramp_evm_address
+        purchase_id, offramp_evm_address, offer_id, checkout_flow_id, checkout_session_id, email
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *;
     `;
     const values = [
@@ -122,23 +118,33 @@ export class DatabaseService {
       wallet.metadata,
       wallet.purchase_id,
       wallet.offramp_evm_address,
+      wallet.offer_id,
+      wallet.checkout_flow_id,
+      wallet.checkout_session_id,
+      wallet.email,
     ];
-    const result = await this.query<DepositWallet>(query, values);
+    const result = await this.query<CheckoutWallet>(query, values);
     return result.rows[0];
   }
 
-  public async getDepositWalletById(
-    id: DepositWalletID
-  ): Promise<DepositWallet | null> {
-    const query = "SELECT * FROM deposit_wallets WHERE id = $1;";
-    const result = await this.query<DepositWallet>(query, [id]);
+  public async getCheckoutWalletById(id: CheckoutWalletID): Promise<CheckoutWallet | null> {
+    const query = "SELECT * FROM checkout_wallets WHERE id = $1;";
+    const result = await this.query<CheckoutWallet>(query, [id]);
     return result.rows[0] || null;
   }
 
-  public async updateDepositWallet(
-    id: DepositWalletID,
-    updates: Partial<DepositWallet>
-  ): Promise<DepositWallet | null> {
+  public async getCheckoutWalletByCheckoutSessionID(
+    checkout_session_id: CheckoutSessionID,
+  ): Promise<CheckoutWallet | null> {
+    const query = "SELECT * FROM checkout_wallets WHERE checkout_session_id = $1;";
+    const result = await this.query<CheckoutWallet>(query, [checkout_session_id]);
+    return result.rows[0] || null;
+  }
+
+  public async updateCheckoutWallet(
+    id: CheckoutWalletID,
+    updates: Partial<CheckoutWallet>,
+  ): Promise<CheckoutWallet | null> {
     const updateFields: string[] = [];
     const updateValues: any[] = [id]; // $1 is for the ID in WHERE clause
 
@@ -160,50 +166,47 @@ export class DatabaseService {
     // This check is primarily for defensive programming, though `updateFields.length`
     // should always be >= 1 after the `updated_at` logic.
     if (updateFields.length === 0) {
-      return this.getDepositWalletById(id); // No actual update to perform
+      return this.getCheckoutWalletById(id); // No actual update to perform
     }
 
     const query = `
-      UPDATE deposit_wallets
+      UPDATE checkout_wallets
       SET ${updateFields.join(", ")}
       WHERE id = $1
       RETURNING *;
     `;
-    const result = await this.query<DepositWallet>(query, updateValues);
+    const result = await this.query<CheckoutWallet>(query, updateValues);
     return result.rows[0] || null;
   }
 
   // --- CustomerPurchase CRUD Operations ---
 
-  public async createCustomerPurchase(
-    purchase: CustomerPurchase
-  ): Promise<CustomerPurchase> {
+  public async createCustomerPurchase(purchase: CustomerPurchase): Promise<CustomerPurchase> {
     const query = `
       INSERT INTO customer_purchases (
-        id, wallet_id, customer_purchase_id, title, status, description,
-        customer_user_id, customer_org_id, customer_org_endpoint, customer_org_api_key,
-        vendor_id, pricing, customer_check_billing_api_key, vendor_update_billing_api_key,
+        id, wallet_id, checkout_session_id, officex_purchase_id, title, description,
+        customer_user_id, customer_org_id, customer_org_endpoint,
+        vendor_id, price_line, customer_billing_api_key, vendor_billing_api_key,
         vendor_notes, balance, balance_low_trigger, balance_critical_trigger,
         balance_termination_trigger, created_at, updated_at, tracer, metadata
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       RETURNING *;
     `;
     const values = [
       purchase.id,
       purchase.wallet_id,
-      purchase.customer_purchase_id,
+      purchase.checkout_session_id,
+      purchase.officex_purchase_id,
       purchase.title,
-      purchase.status,
       purchase.description,
       purchase.customer_user_id,
       purchase.customer_org_id,
       purchase.customer_org_endpoint,
-      purchase.customer_org_api_key,
       purchase.vendor_id,
-      purchase.pricing,
-      purchase.customer_check_billing_api_key,
-      purchase.vendor_update_billing_api_key,
+      purchase.price_line,
+      purchase.customer_billing_api_key,
+      purchase.vendor_billing_api_key,
       purchase.vendor_notes,
       purchase.balance,
       purchase.balance_low_trigger,
@@ -218,17 +221,22 @@ export class DatabaseService {
     return result.rows[0];
   }
 
-  public async getCustomerPurchaseById(
-    id: CustomerPurchaseID
-  ): Promise<CustomerPurchase | null> {
+  public async getCustomerPurchaseById(id: CustomerPurchaseID): Promise<CustomerPurchase | null> {
     const query = "SELECT * FROM customer_purchases WHERE id = $1;";
     const result = await this.query<CustomerPurchase>(query, [id]);
+    return result.rows[0] || null;
+  }
+  public async getCustomerPurchaseByCheckoutSessionID(
+    checkout_session_id: CheckoutSessionID,
+  ): Promise<CustomerPurchase | null> {
+    const query = "SELECT * FROM customer_purchases WHERE checkout_session_id = $1;";
+    const result = await this.query<CustomerPurchase>(query, [checkout_session_id]);
     return result.rows[0] || null;
   }
 
   public async updateCustomerPurchase(
     id: CustomerPurchaseID,
-    updates: Partial<CustomerPurchase>
+    updates: Partial<CustomerPurchase>,
   ): Promise<CustomerPurchase | null> {
     const fields = Object.keys(updates)
       .map((key, index) => `${key} = $${index + 2}`) // Start params from $2 as $1 is id
@@ -263,10 +271,7 @@ export class DatabaseService {
    * @param amount The amount to add to the balance (can be negative for deductions).
    * @returns The updated CustomerPurchase record.
    */
-  public async updatePurchaseBalance(
-    purchaseId: CustomerPurchaseID,
-    amount: number
-  ): Promise<CustomerPurchase | null> {
+  public async updatePurchaseBalance(purchaseId: CustomerPurchaseID, amount: number): Promise<CustomerPurchase | null> {
     const query = `
       UPDATE customer_purchases
       SET
@@ -275,10 +280,7 @@ export class DatabaseService {
       WHERE id = $1
       RETURNING *;
     `;
-    const result = await this.query<CustomerPurchase>(query, [
-      purchaseId,
-      amount,
-    ]);
+    const result = await this.query<CustomerPurchase>(query, [purchaseId, amount]);
     return result.rows[0] || null;
   }
 
@@ -290,9 +292,7 @@ export class DatabaseService {
    * @param usage The usage record to insert.
    * @returns The inserted UsageRecord.
    */
-  public async addUsageRecordAndDeductBalance(
-    usage: UsageRecord
-  ): Promise<UsageRecord> {
+  public async addUsageRecordAndDeductBalance(usage: UsageRecord): Promise<UsageRecord> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -300,7 +300,7 @@ export class DatabaseService {
       // 1. Insert the usage record
       const insertQuery = `
         INSERT INTO usage_records (
-          purchase_id, timestamp, usage_amount, unit, cost_incurred, description, metadata
+          purchase_id, timestamp, usage_amount, usage_unit, billed_amount, description, metadata
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *;
@@ -309,15 +309,12 @@ export class DatabaseService {
         usage.purchase_id,
         usage.timestamp, // pg client handles Date objects for TIMESTAMPTZ
         usage.usage_amount,
-        usage.unit,
-        usage.cost_incurred,
+        usage.usage_unit,
+        usage.billed_amount,
         usage.description,
         usage.metadata,
       ];
-      const usageResult = await client.query<UsageRecord>(
-        insertQuery,
-        insertValues
-      );
+      const usageResult = await client.query<UsageRecord>(insertQuery, insertValues);
       const newUsageRecord = usageResult.rows[0];
 
       // 2. Deduct the cost from the customer's balance
@@ -329,39 +326,27 @@ export class DatabaseService {
         WHERE id = $1
         RETURNING balance, balance_low_trigger, balance_critical_trigger, balance_termination_trigger;
       `;
-      const balanceResult = await client.query<CustomerPurchase>(
-        updateBalanceQuery,
-        [usage.purchase_id, usage.cost_incurred]
-      );
+      const balanceResult = await client.query<CustomerPurchase>(updateBalanceQuery, [
+        usage.purchase_id,
+        usage.billed_amount,
+      ]);
 
       if (balanceResult.rows.length === 0) {
-        throw new Error(
-          `Customer purchase with ID ${usage.purchase_id} not found for balance update.`
-        );
+        throw new Error(`Customer purchase with ID ${usage.purchase_id} not found for balance update.`);
       }
 
-      const {
-        balance,
-        balance_low_trigger,
-        balance_critical_trigger,
-        balance_termination_trigger,
-      } = balanceResult.rows[0];
+      const { balance, balance_low_trigger, balance_critical_trigger, balance_termination_trigger } =
+        balanceResult.rows[0];
 
       // Optional: Add logic here to check balance triggers and send notifications
       if (balance <= balance_termination_trigger) {
-        console.warn(
-          `Purchase ${usage.purchase_id} balance is at or below termination trigger: ${balance}`
-        );
+        console.warn(`Purchase ${usage.purchase_id} balance is at or below termination trigger: ${balance}`);
         // Trigger service termination logic
       } else if (balance <= balance_critical_trigger) {
-        console.warn(
-          `Purchase ${usage.purchase_id} balance is at or below critical trigger: ${balance}`
-        );
+        console.warn(`Purchase ${usage.purchase_id} balance is at or below critical trigger: ${balance}`);
         // Trigger critical balance notification
       } else if (balance <= balance_low_trigger) {
-        console.warn(
-          `Purchase ${usage.purchase_id} balance is at or below low trigger: ${balance}`
-        );
+        console.warn(`Purchase ${usage.purchase_id} balance is at or below low trigger: ${balance}`);
         // Trigger low balance notification
       }
 
@@ -369,10 +354,7 @@ export class DatabaseService {
       return newUsageRecord;
     } catch (error) {
       await client.query("ROLLBACK");
-      console.error(
-        "Transaction failed for addUsageRecordAndDeductBalance:",
-        error
-      );
+      console.error("Transaction failed for addUsageRecordAndDeductBalance:", error);
       throw error;
     } finally {
       client.release();
@@ -392,13 +374,13 @@ export class DatabaseService {
     purchaseId: CustomerPurchaseID,
     interval: string, // e.g., '1 day', '1 hour', '1 week'
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
   ): Promise<HistoricalBillingEntry[]> {
     let query = `
       SELECT
         time_bucket($1, timestamp) AS time_bucket,
         SUM(usage_amount) AS total_usage_amount,
-        SUM(cost_incurred) AS total_cost_incurred,
+        SUM(cost_incurred) AS total_billed_amount,
         purchase_id
       FROM usage_records
       WHERE purchase_id = $2
@@ -434,7 +416,7 @@ export class DatabaseService {
   public async getUsageRecordsByPurchaseId(
     purchaseId: CustomerPurchaseID,
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
   ): Promise<UsageRecord[]> {
     let query = `
       SELECT *

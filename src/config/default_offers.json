@@ -1,7 +1,7 @@
 [
   {
-    "id": "AmazonS3Disk_01",
-    "sku": "AmazonS3Disk_01",
+    "id": "aws-s3-storage-giftcard",
+    "sku": "aws-s3-storage-giftcard",
     "title": "Amazon S3 Storage Bucket",
     "description": "Scalable and secure cloud storage.",
     "metadata": {
