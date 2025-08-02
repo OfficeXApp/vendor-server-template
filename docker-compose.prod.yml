@@ -1,0 +1,133 @@
+# docker-compose.prod.yml
+# For Production Deployment with Traefik for Automatic SSL
+
+version: "3.8"
+
+services:
+  # TimescaleDB (PostgreSQL with TimescaleDB extension)
+  db:
+    # Use an image from a registry for production
+    image: timescale/timescaledb-ha:pg17
+    restart: unless-stopped
+    # Exposing the port is optional in prod, but can be useful for debugging.
+    # The 'app' service will connect to 'db:5432' on the internal Docker network.
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./src/schema/schema.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Your Node.js Fastify Application
+  app:
+    # Use 'build: .' to build the image from the local Dockerfile
+    build: .
+    restart: unless-stopped
+    # No 'ports' mapping here, Traefik handles external access.
+    # We 'expose' the port for Traefik to route to.
+    expose:
+      - "${PORT:-3001}"
+
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/data
+      - PORT=${PORT:-3001}
+      # All environment variables from your local setup for production
+      - VENDOR_API_KEY=${VENDOR_API_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - VENDOR_NAME=${VENDOR_NAME}
+      - SERVER_DOMAIN=${SERVER_DOMAIN}
+      - SANITY_CHECK_ENV=${SANITY_CHECK_ENV}
+      - CHAIN_NAME=${CHAIN_NAME}
+      - CHAIN_ID_DEC=${CHAIN_ID_DEC}
+      - RPC_ENDPOINT=${RPC_ENDPOINT}
+      - USDC_ADDRESS=${USDC_ADDRESS}
+      - USDT_ADDRESS=${USDT_ADDRESS}
+      - VENDOR_ID=${VENDOR_ID}
+      - VENDOR_OFFRAMP_WALLET_ADDRESS=${VENDOR_OFFRAMP_WALLET_ADDRESS}
+      - VENDOR_WALLET_PUBLIC_KEY=${VENDOR_WALLET_PUBLIC_KEY}
+      - VENDOR_WALLET_PRIVATE_KEY=${VENDOR_WALLET_PRIVATE_KEY}
+      # The DATABASE_URL must point to the 'db' service name in the Docker network
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - CHAIN_EXPLORER_URL=${CHAIN_EXPLORER_URL}
+      - DEFAULT_BLOCK_CONFIRMATIONS=${DEFAULT_BLOCK_CONFIRMATIONS}
+      - BILLING_BUCKET_NAME=${BILLING_BUCKET_NAME}
+
+    volumes:
+      - app_data:/data
+
+    # Traefik Labels for your application service
+    labels:
+      - "traefik.enable=true"
+      # Secure router for HTTPS traffic
+      - "traefik.http.routers.my-app.rule=Host(`${SERVER_DOMAIN}`)"
+      - "traefik.http.routers.my-app.entrypoints=websecure"
+      - "traefik.http.routers.my-app.tls.certresolver=myresolver"
+      - "traefik.http.services.my-app.loadbalancer.server.port=${PORT:-3001}"
+      # HTTP router for redirection (handled by Traefik's global redirect)
+      - "traefik.http.routers.my-app-http.rule=Host(`${SERVER_DOMAIN}`)"
+      - "traefik.http.routers.my-app-http.entrypoints=web"
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-3001}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.myresolver.acme.tlschallenge=true
+      - --certificatesresolvers.myresolver.acme.email=${LE_EMAIL}
+      - --certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --log.level=INFO
+      - --accesslog=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt_certs:/letsencrypt
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+volumes:
+  app_data:
+    driver: local
+  db_data:
+    driver: local
+  letsencrypt_certs:
+    driver: local

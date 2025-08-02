@@ -51,6 +51,15 @@ npm install
 npm run dev
 ```
 
+### Production Docker
+
+```sh
+# build & run in background
+docker compose -f docker-compose.prod.yml up --build -d
+# view logs
+docker compose -f docker-compose.prod.yml logs -f
+```
+
 ### Cost Reports via Storage Lens
 
 AWS S3 buckets are tagged with `officex_vendor_purchase_id` tag, which is used for billing purposes. You must set up a daily cost export on AWS Cost Explorer to export the cost report to a CSV file in a target S3 bucket.
