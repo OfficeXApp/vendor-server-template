@@ -57,7 +57,7 @@ npm run dev
 # build & run in background
 docker-compose -f docker-compose.prod.yml up --build -d
 # view logs
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.prod.yml logs --tail 500 -f
 
 # safe restart
 docker-compose -f docker-compose.prod.yml restart

@@ -512,7 +512,6 @@ export class AwsService {
   public async downloadBillingExportFolder(date: Date): Promise<string[]> {
     console.log(`[AWS Service] Starting download of billing exports from S3...`);
 
-    // 1. **Add this line to ensure the directory exists.**
     const localExportPath = "./billing-exports";
     try {
       await mkdir(localExportPath, { recursive: true });
@@ -521,15 +520,14 @@ export class AwsService {
       console.error(`[AWS Service] Failed to create local directory:`, err);
       throw err;
     }
-    await this.cleanupBillingExportFolder(); // Ensure the folder is clean before starting
+    await this.cleanupBillingExportFolder();
 
     const reportName = "officex-vendor-billing-report";
     const dateRange = getBillingPeriodRange(date);
-    const manifestKey = `costreports/${reportName}/${dateRange}/${reportName}-Manifest.json`;
+    const manifestKey = `officex-vendor-billing-reports/${reportName}/metadata/${dateRange}/${reportName}-Manifest.json`;
 
     console.log(`[AWS Service] Looking for manifest at key: ${manifestKey}`);
 
-    // 1. Download the manifest file from the stable key
     const manifestCommand = new GetObjectCommand({
       Bucket: process.env.BILLING_BUCKET_NAME,
       Key: manifestKey,
@@ -549,15 +547,17 @@ export class AwsService {
     }
 
     const manifest = JSON.parse(manifestData);
-    // The `reportKeys` array from the manifest gives you the full, unstable paths
-    const reportKeys = manifest.reportKeys as string[];
+    const reportKeys = manifest.dataFiles.map((str: string) =>
+      str.replace(`s3://${process.env.BILLING_BUCKET_NAME}/`, ""),
+    ) as string[];
     const csvFilePaths: string[] = [];
 
     for (const reportKey of reportKeys) {
-      const fileName = path.basename(reportKey);
-      const localCsvPath = path.join(localExportPath, fileName.replace(/\.zip$/, ""));
+      // Correctly handle the filename: remove both .gz and .csv extensions
+      const fileName = path.basename(reportKey).replace(/\.gz$/, "");
+      const localCsvPath = path.join(localExportPath, fileName);
 
-      console.log(`[AWS Service] Downloading and unzipping: ${reportKey}`);
+      console.log(`[AWS Service] Downloading and decompressing: ${reportKey}`);
 
       const getObjectCommand = new GetObjectCommand({
         Bucket: process.env.BILLING_BUCKET_NAME,
@@ -572,54 +572,25 @@ export class AwsService {
           continue;
         }
 
-        const contentLength = response.ContentLength;
-        console.log(`[AWS Service] File size: ${contentLength} bytes. Attempting to decompress with yauzl.`);
-
-        // Read the S3 stream into a buffer first
         const s3Stream = response.Body as Readable;
-        const chunks = [];
-        for await (const chunk of s3Stream) {
-          chunks.push(chunk);
-        }
-        const buffer = Buffer.concat(chunks);
 
-        // Decompress the zip file from the buffer using yauzl
-        await new Promise<void>((resolve, reject) => {
-          yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, zipfile) => {
-            if (err) {
-              return reject(err);
-            }
-            zipfile.on("entry", (entry) => {
-              // Extract only the CSV file from the zip archive
-              if (!entry.fileName.endsWith(".csv")) {
-                zipfile.readEntry();
-                return;
-              }
-              zipfile.openReadStream(entry, (err, readStream) => {
-                if (err) {
-                  return reject(err);
-                }
-                const writeStream = createWriteStream(localCsvPath);
-                writeStream.on("finish", () => {
-                  console.log(`[AWS Service] Successfully unzipped and saved: ${localCsvPath}`);
-                  csvFilePaths.push(localCsvPath);
-                  zipfile.readEntry(); // Read the next entry
-                  resolve();
-                });
-                writeStream.on("error", reject);
-                readStream.pipe(writeStream);
-              });
-            });
-            zipfile.readEntry();
-          });
-        });
+        // **REPLACED yauzl WITH zlib's gunzip and stream pipeline**
+        const gunzip = zlib.createGunzip();
+        const writeStream = createWriteStream(localCsvPath);
+
+        // Use the pipeline function to handle backpressure and errors
+        await pipeline(s3Stream, gunzip, writeStream);
+
+        console.log(`[AWS Service] Successfully decompressed and saved: ${localCsvPath}`);
+        csvFilePaths.push(localCsvPath);
       } catch (error: any) {
-        console.error(`[AWS Service] Failed to download or unzip ${reportKey}:`, error);
+        console.error(`[AWS Service] Failed to download or decompress ${reportKey}:`, error);
         console.error(`[AWS Service] Error details:`, error.stack);
+        // Do not re-throw here, as you want the loop to continue
       }
     }
 
-    console.log(`[AWS Service] Finished downloading and unzipping all billing exports.`);
+    console.log(`[AWS Service] Finished downloading and decompressing all billing exports.`);
     return csvFilePaths;
   }
 
@@ -670,14 +641,22 @@ export class AwsService {
       );
 
       for await (const record of parser) {
-        const resourceTag = record["resourceTags/user:officex_vendor_purchase_id"];
+        // console.log("record[product_sku]", record["product_sku"]);
 
-        if (resourceTag && resourceTag.startsWith("CustomerPurchaseID_")) {
+        const resourceTagsJsonString = record["resource_tags"];
+        const resourceTags = JSON.parse(resourceTagsJsonString);
+
+        console.log("resourceTags", resourceTags);
+
+        // @ts-ignore
+        const user_officex_vendor_purchase_id = resourceTags["user_officex_vendor_purchase_id"];
+
+        if (user_officex_vendor_purchase_id && user_officex_vendor_purchase_id.startsWith("CustomerPurchaseID_")) {
           processedRows++;
-          console.log(`[AwsService] Processing valid row for purchase ID: ${resourceTag}`);
+          console.log(`[AwsService] Processing valid row for purchase ID: ${user_officex_vendor_purchase_id}`);
 
           try {
-            const purchaseId: CustomerPurchaseID = resourceTag;
+            const purchaseId: CustomerPurchaseID = user_officex_vendor_purchase_id;
             const customerPurchase = await db.getCustomerPurchaseById(purchaseId);
 
             if (!customerPurchase) {
@@ -686,20 +665,20 @@ export class AwsService {
             }
 
             const vendorApiKey = customerPurchase.vendor_billing_api_key;
-            const unitCost = parseFloat(record["lineItem/BlendedRate"]);
-            const usageAmount = parseFloat(record["lineItem/UsageAmount"]);
-            const billedCost = parseFloat(record["lineItem/BlendedCost"]);
+            const unitCost = parseFloat(record["line_item_blended_rate"]);
+            const usageAmount = parseFloat(record["line_item_usage_amount"]);
+            const billedCost = parseFloat(record["line_item_blended_cost"]);
 
             // Apply the 36% markup
             const billedAmountWithMarkup = billedCost * 1.36;
 
             const usageRecord: UsageRecord = {
               purchase_id: purchaseId,
-              timestamp: new Date(record["bill/BillingPeriodStartDate"]),
+              timestamp: new Date(record["bill_billing_period_start_date"]),
               usage_amount: usageAmount,
-              usage_unit: record["pricing/unit"],
+              usage_unit: record["pricing_unit"],
               billed_amount: billedAmountWithMarkup,
-              description: record["lineItem/LineItemDescription"],
+              description: record["line_item_line_item_description"],
             };
 
             await db.addUsageRecordAndDeductBalance(usageRecord);
@@ -708,7 +687,10 @@ export class AwsService {
               `[AwsService] Successfully metered usage for ${purchaseId}. Billed amount: ${billedAmountWithMarkup.toFixed(6)} USD.`,
             );
           } catch (rowError) {
-            console.error(`[AwsService] Error processing row for purchase ID ${resourceTag}:`, rowError);
+            console.error(
+              `[AwsService] Error processing row for purchase ID ${user_officex_vendor_purchase_id}:`,
+              rowError,
+            );
           }
         }
       }
@@ -765,22 +747,9 @@ export function urlSafeBase64Encode(str: string) {
 // this function returns the previous days month range, since cron job is expected to run at 3:00 AM UTC
 export const getBillingPeriodRange = (date: Date) => {
   const year = date.getUTCFullYear();
-  const month = date.getUTCMonth();
+  const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
 
-  const startDate = new Date(Date.UTC(year, month, 1));
-  const endDate = new Date(Date.UTC(year, month + 1, 1));
-
-  const format = (d: Date) => {
-    const y = d.getUTCFullYear();
-    const m = (d.getUTCMonth() + 1).toString().padStart(2, "0");
-    const day = d.getUTCDate().toString().padStart(2, "0");
-    return `${y}${m}${day}`;
-  };
-
-  const startFormatted = format(startDate);
-  const endFormatted = format(endDate);
-
-  return `${startFormatted}-${endFormatted}`;
+  return `BILLING_PERIOD=${year}-${month}`;
 };
 
 const getFormattedTimestamp = () => {

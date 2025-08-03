@@ -86,7 +86,6 @@ CREATE TABLE customer_purchases (
     customer_billing_api_key TEXT NOT NULL UNIQUE, -- API key for customer to check billing. **CRITICAL: Encrypt this field in production.**
     vendor_billing_api_key TEXT NOT NULL UNIQUE, -- API key for authorized servers to update billing. **CRITICAL: Encrypt this field in production.**
     vendor_notes TEXT,
-    balance NUMERIC(18, 6) NOT NULL DEFAULT 0.000000, -- Current balance for this purchase in USD
     balance_low_trigger NUMERIC(18, 6) NOT NULL, -- Threshold to notify customer of low balance
     balance_critical_trigger NUMERIC(18, 6) NOT NULL, -- Threshold to notify customer of critical balance
     balance_termination_trigger NUMERIC(18, 6) NOT NULL, -- Threshold to terminate service
@@ -103,7 +102,6 @@ COMMENT ON COLUMN customer_purchases.customer_org_endpoint IS 'Endpoint for Offi
 COMMENT ON COLUMN customer_purchases.price_line IS 'JSON object detailing the pricing model for this specific purchase.';
 COMMENT ON COLUMN customer_purchases.customer_billing_api_key IS 'API key for the customer to query their billing status. **CRITICAL: Encrypt this field in production.**';
 COMMENT ON COLUMN customer_purchases.vendor_billing_api_key IS 'API key for authorized services to report usage and update balance. **CRITICAL: Encrypt this field in production.**';
-COMMENT ON COLUMN customer_purchases.balance IS 'The current remaining balance for this purchase.';
 COMMENT ON COLUMN customer_purchases.balance_low_trigger IS 'Balance threshold for sending a "low balance" notification.';
 COMMENT ON COLUMN customer_purchases.balance_critical_trigger IS 'Balance threshold for sending a "critical balance" notification.';
 COMMENT ON COLUMN customer_purchases.balance_termination_trigger IS 'Balance threshold at which services for this purchase are terminated.';

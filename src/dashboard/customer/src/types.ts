@@ -44,7 +44,6 @@ export interface CustomerPurchaseFE {
   //   customer_billing_api_key: string;
   //   vendor_billing_api_key: string;
   vendor_notes: string;
-  balance: number;
   balance_low_trigger: number;
   balance_critical_trigger: number;
   balance_termination_trigger: number;

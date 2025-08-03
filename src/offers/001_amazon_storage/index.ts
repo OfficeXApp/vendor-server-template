@@ -122,7 +122,7 @@ const validateCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
     );
 
     if (token_balance < minTargetBalance) {
-      const error_message = `Insufficient funds in wallet=${wallet.evm_address} for token ${process.env.USDC_ADDRESS}. Required: ${formatUnits(minTargetBalance, 6)}, Found: ${formatUnits(token_balance, 6)}. You can verify this on chain explorer ${process.env.CHAIN_EXPLORER_URL}/address/${wallet.evm_address}`;
+      const error_message = `Insufficient funds. Found: ${formatUnits(token_balance, 6)}, Required: ${formatUnits(minTargetBalance, 6)}. Verify this on chain explorer: ${process.env.CHAIN_EXPLORER_URL}/address/${wallet.evm_address}`;
       const response_payload: IResponseCheckoutValidate = {
         success: false,
         message: error_message,
@@ -306,7 +306,6 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
       customer_billing_api_key,
       vendor_billing_api_key,
       vendor_notes: `Created by ${process.env.VENDOR_ID} for checkout_flow_id=${checkout_flow_id} and checkout_session_id=${checkout_session_id} and officex_purchase_id=${officex_purchase_id} and wallet=${wallet.evm_address}. ${proxy_buyer_data ? `Proxy buyer data: ${JSON.stringify(proxy_buyer_data)}` : ""}`,
-      balance: updatedWallet.latest_usd_balance,
       balance_low_trigger: Math.min(10, updatedWallet.latest_usd_balance / 5),
       balance_critical_trigger: Math.min(2, updatedWallet.latest_usd_balance / 10),
       balance_termination_trigger: Math.max(0.05, updatedWallet.latest_usd_balance / 100),
@@ -523,12 +522,12 @@ const topupCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
       }
     }
 
-    // 6. Update the USD balance in the CustomerPurchase record
+    // 6. Update the USD balance in the CheckoutWallet record
     const netUsdBalance = Number(formatUnits(currentWalletBalance - gas_transfer_buffer, 6));
     const updatedUsdBalance = wallet.latest_usd_balance + netUsdBalance;
 
-    const updatedPurchase = await request.server.db.updateCustomerPurchase(customerPurchase.id, {
-      balance: updatedUsdBalance,
+    const updatedPurchase = await request.server.db.updateCheckoutWallet(wallet.id, {
+      latest_usd_balance: updatedUsdBalance,
       updated_at: Date.now(),
     });
 

@@ -141,6 +141,12 @@ export class DatabaseService {
     return result.rows[0] || null;
   }
 
+  public async getCheckoutWalletByPurchaseId(purchase_id: CustomerPurchaseID): Promise<CheckoutWallet | null> {
+    const query = "SELECT * FROM checkout_wallets WHERE purchase_id = $1;";
+    const result = await this.query<CheckoutWallet>(query, [purchase_id]);
+    return result.rows[0] || null;
+  }
+
   public async updateCheckoutWallet(
     id: CheckoutWalletID,
     updates: Partial<CheckoutWallet>,
@@ -187,10 +193,10 @@ export class DatabaseService {
         id, wallet_id, checkout_session_id, officex_purchase_id, title, description,
         customer_user_id, customer_org_id, customer_org_endpoint,
         vendor_id, price_line, customer_billing_api_key, vendor_billing_api_key,
-        vendor_notes, balance, balance_low_trigger, balance_critical_trigger,
+        vendor_notes, balance_low_trigger, balance_critical_trigger,
         balance_termination_trigger, created_at, updated_at, tracer, metadata
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING *;
     `;
     const values = [
@@ -208,7 +214,6 @@ export class DatabaseService {
       purchase.customer_billing_api_key,
       purchase.vendor_billing_api_key,
       purchase.vendor_notes,
-      purchase.balance,
       purchase.balance_low_trigger,
       purchase.balance_critical_trigger,
       purchase.balance_termination_trigger,
@@ -263,27 +268,6 @@ export class DatabaseService {
     return result.rows[0] || null;
   }
 
-  /**
-   * Updates the balance of a customer purchase.
-   * This is a critical operation and should ideally be part of a transaction
-   * if combined with usage record insertion.
-   * @param purchaseId The ID of the customer purchase.
-   * @param amount The amount to add to the balance (can be negative for deductions).
-   * @returns The updated CustomerPurchase record.
-   */
-  public async updatePurchaseBalance(purchaseId: CustomerPurchaseID, amount: number): Promise<CustomerPurchase | null> {
-    const query = `
-      UPDATE customer_purchases
-      SET
-        balance = balance + $2,
-        updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
-      WHERE id = $1
-      RETURNING *;
-    `;
-    const result = await this.query<CustomerPurchase>(query, [purchaseId, amount]);
-    return result.rows[0] || null;
-  }
-
   // --- UsageRecord (Hypertable) Operations ---
 
   /**
@@ -317,36 +301,53 @@ export class DatabaseService {
       const usageResult = await client.query<UsageRecord>(insertQuery, insertValues);
       const newUsageRecord = usageResult.rows[0];
 
-      // 2. Deduct the cost from the customer's balance
+      // fetch the wallet
+      const wallet = await this.getCheckoutWalletByPurchaseId(usage.purchase_id);
+
+      if (!wallet) {
+        throw new Error(`Wallet with Purchase ID ${usage.purchase_id} not found for balance update.`);
+      }
+
+      const purchase = await this.getCustomerPurchaseById(usage.purchase_id);
+
+      if (!purchase) {
+        throw new Error(`Customer purchase with ID ${usage.purchase_id} not found for balance update.`);
+      }
+
+      // 2. Deduct the cost from the wallet's balance
       const updateBalanceQuery = `
-        UPDATE customer_purchases
+        UPDATE checkout_wallets
         SET
-          balance = balance - $2,
+          latest_usd_balance = latest_usd_balance - $2,
           updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
         WHERE id = $1
-        RETURNING balance, balance_low_trigger, balance_critical_trigger, balance_termination_trigger;
+        RETURNING latest_usd_balance;
       `;
-      const balanceResult = await client.query<CustomerPurchase>(updateBalanceQuery, [
-        usage.purchase_id,
-        usage.billed_amount,
-      ]);
+      const balanceResult = await client.query<CheckoutWallet>(updateBalanceQuery, [wallet.id, usage.billed_amount]);
 
       if (balanceResult.rows.length === 0) {
         throw new Error(`Customer purchase with ID ${usage.purchase_id} not found for balance update.`);
       }
 
-      const { balance, balance_low_trigger, balance_critical_trigger, balance_termination_trigger } =
-        balanceResult.rows[0];
+      const { latest_usd_balance } = balanceResult.rows[0];
+
+      const { balance_low_trigger, balance_critical_trigger, balance_termination_trigger } = purchase;
 
       // Optional: Add logic here to check balance triggers and send notifications
-      if (balance <= balance_termination_trigger) {
-        console.warn(`Purchase ${usage.purchase_id} balance is at or below termination trigger: ${balance}`);
+      if (latest_usd_balance <= balance_termination_trigger) {
+        console.warn(
+          `Purchase ${usage.purchase_id} balance is at or below termination trigger, current balance: ${latest_usd_balance}`,
+        );
         // Trigger service termination logic
-      } else if (balance <= balance_critical_trigger) {
-        console.warn(`Purchase ${usage.purchase_id} balance is at or below critical trigger: ${balance}`);
+      } else if (latest_usd_balance <= balance_critical_trigger) {
+        console.warn(
+          `Purchase ${usage.purchase_id} balance is at or below critical trigger, current balance: ${latest_usd_balance}`,
+        );
         // Trigger critical balance notification
-      } else if (balance <= balance_low_trigger) {
-        console.warn(`Purchase ${usage.purchase_id} balance is at or below low trigger: ${balance}`);
+      } else if (latest_usd_balance <= balance_low_trigger) {
+        console.warn(
+          `Purchase ${usage.purchase_id} balance is at or below low trigger, current balance: ${latest_usd_balance}`,
+        );
         // Trigger low balance notification
       }
 

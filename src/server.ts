@@ -156,6 +156,11 @@ const start = async () => {
   });
 
   fastify.get(HEALTH_ROUTE, async (request, reply) => {
+    const today = new Date();
+    const yesterdayTimestamp = today.getTime() - 24 * 60 * 60 * 1000;
+    const yesterday = new Date(yesterdayTimestamp);
+    await request.server.aws.runDailyBillingJob(request.server.db, yesterday);
+    request.server.log.info("Cron job finished: Daily billing job complete. ✅");
     reply.send({ status: `ok - healthy 👌` });
   });
   fastify.get(APPSTORE_SUGGEST_ROUTE, appstore_suggest_handler);
