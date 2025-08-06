@@ -74,7 +74,7 @@ COMMENT ON COLUMN checkout_wallets.purchase_id IS 'Links to the customer purchas
 CREATE TABLE customer_purchases (
     id TEXT PRIMARY KEY, -- Unique identifier for this vendor's purchase record (e.g., 'CustomerPurchase_...')
     wallet_id TEXT NOT NULL UNIQUE, -- Foreign key to the checkout_wallets table. UNIQUE as one wallet per purchase.
-    officex_purchase_id TEXT NOT NULL UNIQUE, -- ID from OfficeX for this purchase (JobRunID)
+    officex_purchase_id TEXT NOT NULL UNIQUE, -- ID from OfficeX for this purchase (PurchaseID)
     checkout_session_id TEXT NOT NULL UNIQUE, -- 
     title VARCHAR(255) NOT NULL,
     description TEXT, -- ADDED COMMA HERE

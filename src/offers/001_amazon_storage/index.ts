@@ -9,7 +9,7 @@ import {
   IResponseCheckoutInit_Crypto,
   IResponseCheckoutTopup,
   IResponseCheckoutValidate,
-  JobRunStatus,
+  PurchaseStatus,
 } from "@officexapp/types";
 import { FastifyReply, FastifyRequest } from "fastify";
 import { CustomerPurchase, CustomerPurchaseID, GenerateID, IDPrefixEnum, OfferID } from "../../types/core.types";
@@ -388,7 +388,7 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
         skip_to_final_cta: "View Giftcard",
         vendor_name: "Amazon",
         vendor_id: process.env.VENDOR_ID,
-        status: JobRunStatus.PAID,
+        status: PurchaseStatus.PAID,
         description: "Successful Purchase!",
         about_url: `${vendor_customer_dashboard}/?vendor_purchase_id=${createdPurchase.id}&customer_billing_api_key=${customer_billing_api_key}`,
         billing_url: `${vendor_customer_dashboard}/?vendor_purchase_id=${createdPurchase.id}&customer_billing_api_key=${customer_billing_api_key}`,

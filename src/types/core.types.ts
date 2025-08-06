@@ -1,4 +1,4 @@
-import { CheckoutFlowID, CheckoutSessionID, DriveID, JobRunID, JobRunStatus, UserID } from "@officexapp/types";
+import { CheckoutFlowID, CheckoutSessionID, DriveID, PurchaseID, PurchaseStatus, UserID } from "@officexapp/types";
 import { v4 as uuidv4 } from "uuid";
 import { AmazonS3StorageGiftcard } from "./external.types";
 
@@ -62,7 +62,7 @@ export interface CustomerPurchase {
   id: CustomerPurchaseID;
   wallet_id: CheckoutWalletID;
   checkout_session_id: CheckoutSessionID; // duplicated for simplicity
-  officex_purchase_id: JobRunID;
+  officex_purchase_id: PurchaseID;
   title: string;
   description: string;
   customer_user_id: UserID;

@@ -1,4 +1,4 @@
-import type { CheckoutFlowID, CheckoutSessionID, DriveID, JobRunID, UserID } from "@officexapp/types";
+import type { CheckoutFlowID, CheckoutSessionID, DriveID, UserID } from "@officexapp/types";
 
 export type CustomerPurchaseID = string;
 export type CheckoutWalletID = string;

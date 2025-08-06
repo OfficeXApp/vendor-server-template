@@ -1,4 +1,4 @@
-import { CheckoutSessionID, JobRunID, OfferID } from "@officexapp/types";
+import { CheckoutSessionID, PurchaseID, OfferID } from "@officexapp/types";
 import { CustomerPurchaseID } from "./core.types";
 
 export type ExternalID = string;
@@ -16,7 +16,7 @@ export interface AmazonS3StorageGiftcard extends ExternalPayload {
   arn_iam_user: string;
   iam_policy_name: string;
   disk_auth_json: string; // json string
-  officex_purchase_id: JobRunID;
+  officex_purchase_id: PurchaseID;
   purchase_id: CustomerPurchaseID;
   offer_id: OfferID;
   checkout_session_id: CheckoutSessionID;

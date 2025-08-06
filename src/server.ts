@@ -19,7 +19,7 @@ import {
   CheckoutWallet,
   CustomerPurchase,
 } from "./types/core.types";
-import { JobRunStatus } from "@officexapp/types";
+import { PurchaseStatus } from "@officexapp/types";
 import { appstore_suggest_handler } from "./handlers/appstore/suggest";
 import { appstore_list_handler } from "./handlers/appstore/list";
 import { get_offer_handler } from "./handlers/checkout/get-offer";
@@ -143,7 +143,7 @@ const start = async () => {
             const today = new Date();
             const yesterdayTimestamp = today.getTime() - 24 * 60 * 60 * 1000;
             const yesterday = new Date(yesterdayTimestamp);
-            await server.aws.runDailyBillingJob(server.db, yesterday);
+            await server.aws.runDailyBillingJobs(server.db, yesterday);
             server.log.info("Cron job finished: Daily billing job complete. ✅");
           } catch (error) {
             server.log.error("Cron job failed: Error during daily billing job.", error);
@@ -159,8 +159,8 @@ const start = async () => {
     const today = new Date();
     const yesterdayTimestamp = today.getTime() - 24 * 60 * 60 * 1000;
     const yesterday = new Date(yesterdayTimestamp);
-    await request.server.aws.runDailyBillingJob(request.server.db, yesterday);
-    request.server.log.info("Cron job finished: Daily billing job complete. ✅");
+    await request.server.aws.runDailyBillingJobs(request.server.db, yesterday);
+    request.server.log.info("Cron job finished: Daily billing purchase complete. ✅");
     reply.send({ status: `ok - healthy 👌` });
   });
   fastify.get(APPSTORE_SUGGEST_ROUTE, appstore_suggest_handler);

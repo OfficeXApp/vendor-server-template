@@ -25,7 +25,7 @@ import {
   ListUserPoliciesCommand,
 } from "@aws-sdk/client-iam";
 import { defaultProvider } from "@aws-sdk/credential-provider-node"; // Correct import for default provider
-import { CheckoutSessionID, DiskTypeEnum, JobRunID, OfferID, RedeemDiskGiftCard_BTOA } from "@officexapp/types";
+import { CheckoutSessionID, DiskTypeEnum, PurchaseID, OfferID, RedeemDiskGiftCard_BTOA } from "@officexapp/types";
 import { CustomerPurchaseID, UsageRecord } from "../../types/core.types"; // Assuming this path is correct based on your database.ts
 import { LOCAL_DEV_MODE, vendor_customer_dashboard, vendor_server_endpoint } from "../../constants";
 import * as fs from "fs";
@@ -52,7 +52,7 @@ export interface AmazonS3StorageGiftcard extends Record<string, any> {
   arn_iam_user: string;
   iam_policy_name: string;
   disk_auth_json: string; // json string
-  officex_purchase_id: JobRunID;
+  officex_purchase_id: PurchaseID;
   purchase_id: CustomerPurchaseID;
   offer_id: OfferID;
   checkout_session_id: CheckoutSessionID;
@@ -99,7 +99,7 @@ export class AwsService {
     iamUserName: string,
     policyName: string,
     purchaseDetails: {
-      officex_purchase_id: JobRunID;
+      officex_purchase_id: PurchaseID;
       purchase_id: CustomerPurchaseID;
       offer_id: OfferID;
       checkout_session_id: CheckoutSessionID;
@@ -701,8 +701,8 @@ export class AwsService {
     }
   }
 
-  public async runDailyBillingJob(db: DatabaseService, date: Date): Promise<void> {
-    console.log(`[AWS Service] Initiating daily billing job...`);
+  public async runDailyBillingJobs(db: DatabaseService, date: Date): Promise<void> {
+    console.log(`[AWS Service] Initiating daily billing purchase...`);
     try {
       // 1. Download the latest billing report files
       const csvFilePaths = await this.downloadBillingExportFolder(date);
@@ -715,9 +715,9 @@ export class AwsService {
 
       // 3. Clean up the local folder after processing
       await this.cleanupBillingExportFolder();
-      console.log(`[AWS Service] Daily billing job completed successfully. 🎉`);
+      console.log(`[AWS Service] Daily billing purchase completed successfully. 🎉`);
     } catch (error) {
-      console.error(`[AWS Service] Daily billing job failed:`, error);
+      console.error(`[AWS Service] Daily billing purchase failed:`, error);
       // It's good practice to ensure cleanup happens even on error
       try {
         await this.cleanupBillingExportFolder();
@@ -744,7 +744,7 @@ export function urlSafeBase64Encode(str: string) {
   return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
-// this function returns the previous days month range, since cron job is expected to run at 3:00 AM UTC
+// this function returns the previous days month range, since cron purchase is expected to run at 3:00 AM UTC
 export const getBillingPeriodRange = (date: Date) => {
   const year = date.getUTCFullYear();
   const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
