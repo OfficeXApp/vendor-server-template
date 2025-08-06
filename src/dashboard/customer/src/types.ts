@@ -33,7 +33,7 @@ export interface CustomerPurchaseFE {
   id: CustomerPurchaseID;
   wallet_id: CheckoutWalletID;
   checkout_session_id: CheckoutSessionID;
-  officex_purchase_id: JobRunID;
+  officex_purchase_id: string;
   title: string;
   description: string;
   customer_user_id: UserID;
