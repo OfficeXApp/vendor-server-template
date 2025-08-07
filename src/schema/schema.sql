@@ -4,16 +4,10 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 -- Set the time zone for the session to UTC for consistency
 SET TIME ZONE 'UTC';
 
--- Drop tables in reverse order of dependency to allow recreation during development
--- The current drop order is correct for dropping all tables.
-DROP TABLE IF EXISTS usage_records;
-DROP TABLE IF EXISTS customer_purchases;
-DROP TABLE IF EXISTS checkout_wallets;
-DROP TABLE IF EXISTS offers;
 
 -- Table for Offers
 -- Represents the products or services available for purchase (e.g., Amazon S3, Gemini API Key)
-CREATE TABLE offers (
+CREATE TABLE IF NOT EXISTS offers (
     id TEXT PRIMARY KEY, -- Corresponds to OfferSKU enum values (e.g., 'AmazonS3Disk_01')
     sku TEXT NOT NULL UNIQUE, -- Redundant if id is SKU, but good for clarity/indexing
     title VARCHAR(255) NOT NULL,
@@ -33,7 +27,7 @@ COMMENT ON COLUMN offers.metadata IS 'Additional JSON metadata for the offer.';
 -- Stores details of cryptocurrency deposit wallets created for customer checkouts.
 -- These can exist before a purchase is finalized.
 -- Initially created without the fk_purchase constraint due to circular dependency.
-CREATE TABLE checkout_wallets (
+CREATE TABLE IF NOT EXISTS checkout_wallets (
     id TEXT PRIMARY KEY, -- Unique identifier for the deposit wallet (e.g., 'CheckoutWallet_...')
     checkout_flow_id TEXT,
     checkout_session_id TEXT,
@@ -71,7 +65,7 @@ COMMENT ON COLUMN checkout_wallets.purchase_id IS 'Links to the customer purchas
 -- Represents a customer's active purchase of a vendor offer.
 -- This table holds the current state and billing parameters for a purchase.
 -- Initially created without the fk_wallet constraint due to circular dependency.
-CREATE TABLE customer_purchases (
+CREATE TABLE IF NOT EXISTS customer_purchases (
     id TEXT PRIMARY KEY, -- Unique identifier for this vendor's purchase record (e.g., 'CustomerPurchase_...')
     wallet_id TEXT NOT NULL UNIQUE, -- Foreign key to the checkout_wallets table. UNIQUE as one wallet per purchase.
     officex_purchase_id TEXT NOT NULL UNIQUE, -- ID from OfficeX for this purchase (PurchaseID)
@@ -123,7 +117,7 @@ ADD CONSTRAINT fk_wallet
 -- Table for Usage Records (TimescaleDB Hypertable)
 -- This table will store individual usage events for each customer purchase.
 -- It's designed as a TimescaleDB hypertable for efficient time-series queries.
-CREATE TABLE usage_records (
+CREATE TABLE IF NOT EXISTS usage_records (
     id BIGSERIAL, -- Auto-incrementing ID for each usage record
     purchase_id TEXT NOT NULL, -- Foreign key to the customer_purchases table
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- The time of the usage event (TimescaleDB time column)
