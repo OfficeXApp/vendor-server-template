@@ -300,7 +300,7 @@ const finalizeCheckout = async (request: FastifyRequest, reply: FastifyReply) =>
       description: `Purchase of ${CRYPTO_WALLET_TOPUP_GIFT_CARD_ONLY.offer_id} via wallet=${wallet.evm_address} and checkout_flow_id=${checkout_flow_id} during checkout_session_id=${checkout_session_id}. ${proxy_buyer_data ? `Proxy buyer data: ${JSON.stringify(proxy_buyer_data)}` : ""}`,
       customer_user_id: proxy_buyer_data?.user_id || "",
       customer_org_id: proxy_buyer_data?.org_id || "",
-      customer_org_endpoint: proxy_buyer_data?.org_endpoint || "",
+      customer_org_host: proxy_buyer_data?.org_host || "",
       vendor_id: process.env.VENDOR_ID || "",
       price_line: `$0.01/GB/month storage, $0.01/GB egress`,
       customer_billing_api_key,

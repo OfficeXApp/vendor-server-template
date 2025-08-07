@@ -646,8 +646,6 @@ export class AwsService {
         const resourceTagsJsonString = record["resource_tags"];
         const resourceTags = JSON.parse(resourceTagsJsonString);
 
-        console.log("resourceTags", resourceTags);
-
         // @ts-ignore
         const user_officex_vendor_purchase_id = resourceTags["user_officex_vendor_purchase_id"];
 

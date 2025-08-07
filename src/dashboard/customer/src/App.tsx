@@ -348,7 +348,7 @@ const App = () => {
                 <Text className="block text-xl text-gray-700">{reciept.purchase.price_line}</Text>
                 <br />
                 <a
-                  href={`${reciept.purchase.customer_org_endpoint}/org/${reciept.purchase.customer_org_id}/resources/contacts/${reciept.purchase.customer_user_id}`}
+                  href={`${reciept.purchase.customer_org_host}/org/${reciept.purchase.customer_org_id}/resources/contacts/${reciept.purchase.customer_user_id}`}
                   target="_blank"
                   className="block mt-2"
                 >
