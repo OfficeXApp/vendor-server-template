@@ -67,7 +67,7 @@ export interface CustomerPurchase {
   description: string;
   customer_user_id: UserID;
   customer_org_id: DriveID;
-  customer_org_endpoint: string;
+  customer_org_host: string;
   vendor_id: UserID;
   price_line: string;
   customer_billing_api_key: string;

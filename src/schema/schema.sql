@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS customer_purchases (
     description TEXT, -- ADDED COMMA HERE
     customer_user_id TEXT NOT NULL, -- OfficeX UserID of the customer
     customer_org_id TEXT NOT NULL, -- OfficeX DriveID (organization ID)
-    customer_org_endpoint TEXT NOT NULL, -- Endpoint for OfficeX organization API
+    customer_org_host TEXT NOT NULL, -- Endpoint for OfficeX organization API
     vendor_id TEXT NOT NULL, -- Our internal vendor ID
     price_line TEXT NOT NULL, -- Flexible JSON for pricing model details (e.g., per-GB, per-API-call)
     customer_billing_api_key TEXT NOT NULL UNIQUE, -- API key for customer to check billing. **CRITICAL: Encrypt this field in production.**
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS customer_purchases (
 COMMENT ON TABLE customer_purchases IS 'Records of customer purchases, including current balance and billing parameters.';
 COMMENT ON COLUMN customer_purchases.wallet_id IS 'Foreign key to the deposit wallet associated with this purchase.';
 COMMENT ON COLUMN customer_purchases.officex_purchase_id IS 'The unique purchase ID provided by OfficeX.';
-COMMENT ON COLUMN customer_purchases.customer_org_endpoint IS 'Endpoint for OfficeX organization API.'; -- CORRECTED COMMENT
+COMMENT ON COLUMN customer_purchases.customer_org_host IS 'Endpoint for OfficeX organization API.'; -- CORRECTED COMMENT
 COMMENT ON COLUMN customer_purchases.price_line IS 'JSON object detailing the pricing model for this specific purchase.';
 COMMENT ON COLUMN customer_purchases.customer_billing_api_key IS 'API key for the customer to query their billing status. **CRITICAL: Encrypt this field in production.**';
 COMMENT ON COLUMN customer_purchases.vendor_billing_api_key IS 'API key for authorized services to report usage and update balance. **CRITICAL: Encrypt this field in production.**';

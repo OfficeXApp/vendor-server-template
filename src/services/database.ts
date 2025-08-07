@@ -191,7 +191,7 @@ export class DatabaseService {
     const query = `
       INSERT INTO customer_purchases (
         id, wallet_id, checkout_session_id, officex_purchase_id, title, description,
-        customer_user_id, customer_org_id, customer_org_endpoint,
+        customer_user_id, customer_org_id, customer_org_host,
         vendor_id, price_line, customer_billing_api_key, vendor_billing_api_key,
         vendor_notes, balance_low_trigger, balance_critical_trigger,
         balance_termination_trigger, created_at, updated_at, tracer, metadata
@@ -208,7 +208,7 @@ export class DatabaseService {
       purchase.description,
       purchase.customer_user_id,
       purchase.customer_org_id,
-      purchase.customer_org_endpoint,
+      purchase.customer_org_host,
       purchase.vendor_id,
       purchase.price_line,
       purchase.customer_billing_api_key,
