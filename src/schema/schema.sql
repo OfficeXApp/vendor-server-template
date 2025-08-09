@@ -4,6 +4,12 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 -- Set the time zone for the session to UTC for consistency
 SET TIME ZONE 'UTC';
 
+-- Table to track applied migrations
+CREATE TABLE IF NOT EXISTS _migrations (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- Table for Offers
 -- Represents the products or services available for purchase (e.g., Amazon S3, Gemini API Key)

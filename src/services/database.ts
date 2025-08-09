@@ -11,6 +11,8 @@ import {
   HistoricalBillingEntry,
 } from "../types/core.types"; // Adjust path as needed
 import { CheckoutSessionID } from "@officexapp/types";
+import path from "path";
+import fs from "fs";
 
 export class DatabaseService {
   private pool: Pool;
@@ -59,6 +61,50 @@ export class DatabaseService {
     return this.pool.query<T>(text, params);
   }
 
+  public async runDatabaseMigrations(): Promise<void> {
+    const migrationsPath = path.join(__dirname, "..", "schema", "migrations");
+
+    let client;
+    try {
+      client = await this.pool.connect();
+      await client.query("BEGIN");
+
+      // Get list of already applied migrations from the new _migrations table
+      const appliedMigrationsResult = await client.query("SELECT name FROM _migrations;");
+      const appliedMigrations = new Set(appliedMigrationsResult.rows.map((row) => row.name));
+
+      // Find and apply new migrations
+      const files = fs.readdirSync(migrationsPath).sort();
+
+      console.log(`Found ${files.length} migration files. Applying new ones...`);
+      for (const file of files) {
+        if (file.endsWith(".sql") && !appliedMigrations.has(file)) {
+          const filePath = path.join(migrationsPath, file);
+          const sql = fs.readFileSync(filePath, "utf8");
+          console.log(`Applying migration: ${file}`);
+
+          await client.query(sql);
+          // Insert the filename into the _migrations table to mark it as applied
+          await client.query("INSERT INTO _migrations (name) VALUES ($1);", [file]);
+        }
+      }
+
+      await client.query("COMMIT");
+      console.log("All pending database migrations applied successfully. ✅");
+    } catch (error) {
+      console.error("Failed to apply database migrations:", error);
+      if (client) {
+        await client.query("ROLLBACK");
+      }
+      throw error;
+    } finally {
+      // Release the client back to the pool instead of ending the entire pool
+      if (client) {
+        client.release();
+      }
+    }
+  }
+
   // --- Offer CRUD Operations ---
 
   public async createOffer(offer: Offer): Promise<Offer> {
@@ -74,7 +120,7 @@ export class DatabaseService {
       offer.description,
       offer.created_at,
       offer.updated_at,
-      offer.metadata,
+      offer.metadata ? JSON.stringify(offer.metadata) : null,
     ];
     const result = await this.query<Offer>(query, values);
     return result.rows[0];

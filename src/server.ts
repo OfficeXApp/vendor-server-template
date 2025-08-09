@@ -120,7 +120,8 @@ const start = async () => {
   // --- Fastify Hooks for Database Lifecycle ---
   fastify.addHook("onReady", async () => {
     try {
-      await fastify.db.connect();
+      // Database is already connected in the services plugin, just run migrations
+      await fastify.db.runDatabaseMigrations();
       fastify.log.info("Database connected and ready.");
     } catch (error) {
       fastify.log.error("Failed to connect to database on startup:", error);
@@ -236,19 +237,57 @@ const start = async () => {
         try {
           const existingOffer = await fastify.db.getOfferById(offerData.id);
           if (!existingOffer) {
+            // Validate required fields before processing
+            if (!offerData.id || !offerData.sku || !offerData.title || !offerData.description) {
+              fastify.log.error(`Invalid offer data for ${offerData.id}: missing required fields`, {
+                id: offerData.id,
+                sku: offerData.sku,
+                title: offerData.title,
+                description: offerData.description,
+              });
+              continue;
+            }
+
             // Add current timestamps as they are not in the JSON
             const offerToCreate: Offer = {
               ...offerData,
               created_at: Date.now(),
               updated_at: Date.now(),
             };
-            await fastify.db.createOffer(offerToCreate);
-            fastify.log.info(`Added new default offer: ${offerToCreate.title} (${offerToCreate.id})`);
+
+            fastify.log.debug(`Creating offer with data:`, offerToCreate);
+
+            // Add debugging: Check database connection and verify insert
+            try {
+              const createdOffer = await fastify.db.createOffer(offerToCreate);
+              fastify.log.info(`✅ Successfully created offer in database:`, createdOffer);
+
+              // Immediately verify the offer was inserted
+              const verifyOffer = await fastify.db.getOfferById(offerToCreate.id);
+              if (verifyOffer) {
+                fastify.log.info(`✅ Verification successful: Offer ${offerToCreate.id} found in database`);
+              } else {
+                fastify.log.error(
+                  `❌ Verification failed: Offer ${offerToCreate.id} NOT found in database immediately after creation`,
+                );
+              }
+
+              fastify.log.info(`Added new default offer: ${offerToCreate.title} (${offerToCreate.id})`);
+            } catch (createError) {
+              fastify.log.error(`❌ Failed to create offer ${offerToCreate.id}:`, createError);
+              throw createError; // Re-throw to be caught by outer catch block
+            }
           } else {
             fastify.log.debug(`Default offer already exists: ${existingOffer.title} (${existingOffer.id})`);
           }
         } catch (dbError) {
-          fastify.log.error(`Error processing default offer ${offerData.id}:`, dbError);
+          console.log("dbError", dbError);
+          fastify.log.error(`Error processing default offer ${offerData.id}:`, {
+            error: dbError,
+            offerData: offerData,
+            errorMessage: dbError instanceof Error ? dbError.message : "Unknown error",
+            errorStack: dbError instanceof Error ? dbError.stack : undefined,
+          });
         }
       }
       fastify.log.info("Default offers initialization complete.");

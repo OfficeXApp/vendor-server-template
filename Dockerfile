@@ -63,6 +63,10 @@ COPY --from=builder /app/dist ./dist
 # Ensure src/config exists in your project root relative to the Dockerfile
 COPY src/config ./dist/config
 
+# Copy the schema directory to the dist folder in the final image
+# This includes migrations that are needed at runtime
+COPY src/schema ./dist/schema
+
 # --- Copy the built React Customer Dashboard from the builder stage ---
 # Ensure the destination path matches where your Fastify server expects it to be in production.
 # Based on your server.ts: path.join(__dirname, "dashboard", "customer")
