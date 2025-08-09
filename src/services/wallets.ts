@@ -33,8 +33,8 @@ import { CheckoutFlowID, CheckoutSessionID } from "@officexapp/types";
 // Base chain ID: 8453 (decimal) is used by viem's chain objects.
 const RPC_ENDPOINT = process.env.RPC_ENDPOINT;
 const USDC_ADDRESS = process.env.USDC_ADDRESS as Address;
-const USDT_ADDRESS = process.env.USDT_ADDRESS as Address;
-const VENDOR_WALLET_PRIVATE_KEY = process.env.VENDOR_WALLET_PRIVATE_KEY as Hex;
+
+const VENDOR_GAS_TANK_PRIVATE_KEY = process.env.VENDOR_GAS_TANK_PRIVATE_KEY as Hex;
 const DATABASE_URL = process.env.DATABASE_URL;
 const DEFAULT_CONFIRMATIONS = parseInt(process.env.DEFAULT_BLOCK_CONFIRMATIONS || "1");
 
@@ -45,16 +45,13 @@ if (!RPC_ENDPOINT) {
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is not set. Please provide a PostgreSQL connection string.");
 }
-if (!VENDOR_WALLET_PRIVATE_KEY) {
+if (!VENDOR_GAS_TANK_PRIVATE_KEY) {
   console.warn(
-    "VENDOR_WALLET_PRIVATE_KEY environment variable is not set. The `sendFromGasTank` function will not work.",
+    "VENDOR_GAS_TANK_PRIVATE_KEY environment variable is not set. The `sendFromGasTank` function will not work.",
   );
 }
 if (!USDC_ADDRESS) {
   console.warn("USDC_ADDRESS environment variable is not set. USDC balance checks will be skipped.");
-}
-if (!USDT_ADDRESS) {
-  console.warn("USDT_ADDRESS environment variable is not set. USDT balance checks will be skipped.");
 }
 
 export function getChainById(chainId: number): Chain | undefined {
@@ -267,12 +264,12 @@ export async function sendFromGasTank(
   destinationPublicAddress: Address,
   confirmations: number = DEFAULT_CONFIRMATIONS,
 ): Promise<TransactionReceipt> {
-  if (!VENDOR_WALLET_PRIVATE_KEY) {
-    throw new Error("Vendor wallet private key is not configured (VENDOR_WALLET_PRIVATE_KEY). Cannot send gas.");
+  if (!VENDOR_GAS_TANK_PRIVATE_KEY) {
+    throw new Error("Vendor wallet private key is not configured (VENDOR_GAS_TANK_PRIVATE_KEY). Cannot send gas.");
   }
 
   try {
-    const vendorAccount = privateKeyToAccount(VENDOR_WALLET_PRIVATE_KEY);
+    const vendorAccount = privateKeyToAccount(VENDOR_GAS_TANK_PRIVATE_KEY);
     const amountWei = parseEther(GAS_TANK_AMOUNT_ETH.toString());
 
     console.log(

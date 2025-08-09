@@ -40,7 +40,6 @@ services:
       - NODE_ENV=${NODE_ENV} # Read from .env
       - DATA_DIR=${DATA_DIR} # Read from .env (for your app's data)
       - PORT=${PORT:-3001} # Read from .env, with default
-      - VENDOR_API_KEY=${VENDOR_API_KEY}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION}
@@ -51,11 +50,10 @@ services:
       - CHAIN_ID_DEC=${CHAIN_ID_DEC} # Read from .env
       - RPC_ENDPOINT=${RPC_ENDPOINT} # Read from .env
       - USDC_ADDRESS=${USDC_ADDRESS} # Read from .env
-      - USDT_ADDRESS=${USDT_ADDRESS} # Read from .env
       - VENDOR_ID=${VENDOR_ID} # Read from .env
-      - VENDOR_OFFRAMP_WALLET_ADDRESS=${VENDOR_OFFRAMP_WALLET_ADDRESS} # Read from .env
-      - VENDOR_WALLET_PUBLIC_KEY=${VENDOR_WALLET_PUBLIC_KEY} # Read from .env
-      - VENDOR_WALLET_PRIVATE_KEY=${VENDOR_WALLET_PRIVATE_KEY} # Read from .env
+      - VENDOR_TREASURY_ADDRESS=${VENDOR_TREASURY_ADDRESS} # Read from .env
+      - VENDOR_GAS_TANK_ADDRESS=${VENDOR_GAS_TANK_ADDRESS} # Read from .env
+      - VENDOR_GAS_TANK_PRIVATE_KEY=${VENDOR_GAS_TANK_PRIVATE_KEY} # Read from .env
       - DATABASE_URL=${DATABASE_URL} # Read from .env
       - CHAIN_EXPLORER_URL=${CHAIN_EXPLORER_URL} # Read from .env
       - DEFAULT_BLOCK_CONFIRMATIONS=${DEFAULT_BLOCK_CONFIRMATIONS} # Read from .env

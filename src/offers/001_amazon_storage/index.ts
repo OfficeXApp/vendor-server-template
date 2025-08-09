@@ -38,7 +38,7 @@ const initCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
       `Deposit wallet for offer ${CRYPTO_WALLET_TOPUP_GIFT_CARD_ONLY.offer_id} - ${checkout_session_id}`,
       `Deposit wallet for offer ${CRYPTO_WALLET_TOPUP_GIFT_CARD_ONLY.offer_id} - Initiated by user_id=${user_id}, org_id=${org_id}, checkout_session_id=${checkout_session_id}, tracer=${tracer}`,
       // @ts-ignore
-      process.env.VENDOR_OFFRAMP_WALLET_ADDRESS || "",
+      process.env.VENDOR_TREASURY_ADDRESS || "",
       email,
     );
 
