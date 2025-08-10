@@ -1,6 +1,10 @@
 // src/server.ts
+import "./instrument";
+
 import dotenv from "dotenv";
 dotenv.config();
+
+import * as Sentry from "@sentry/node";
 
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply, FastifyPluginAsync } from "fastify";
 import * as fs from "fs";
@@ -83,6 +87,33 @@ const start = async () => {
     },
   });
 
+  // Add Sentry error handler for Fastify
+  fastify.setErrorHandler((error, request, reply) => {
+    fastify.log.error(error);
+
+    // Capture the exception with Sentry
+    const sentryEventId = Sentry.captureException(error, {
+      tags: {
+        component: "fastify",
+        method: request.method,
+        url: request.url,
+      },
+      user: {
+        id: request.headers["user-id"] as string,
+      },
+      extra: {
+        headers: request.headers,
+        params: request.params,
+        query: request.query,
+      },
+    });
+
+    reply.status(500).send({
+      error: "Internal Server Error",
+      message: process.env.NODE_ENV === "development" ? error.message : "Something went wrong",
+    });
+  });
+
   const servicesPlugin: FastifyPluginAsync = async (fastify) => {
     await fastify.register(fastifyCors, {
       origin: "*", // Allow all origins
@@ -125,6 +156,9 @@ const start = async () => {
       fastify.log.info("Database connected and ready.");
     } catch (error) {
       fastify.log.error("Failed to connect to database on startup:", error);
+      Sentry.captureException(error, {
+        tags: { component: "database", phase: "startup" },
+      });
       process.exit(1);
     }
   });
@@ -145,9 +179,12 @@ const start = async () => {
             const yesterdayTimestamp = today.getTime() - 24 * 60 * 60 * 1000;
             const yesterday = new Date(yesterdayTimestamp);
             await server.aws.runDailyBillingJobs(server.db, yesterday);
-            server.log.info("Cron job finished: Daily billing job complete. ✅");
+            server.log.info("Cron job finished: Daily billing job complete. ");
           } catch (error) {
             server.log.error("Cron job failed: Error during daily billing job.", error);
+            Sentry.captureException(error, {
+              tags: { component: "cron", job: "daily-billing" },
+            });
           }
         },
         start: true, // Start the job automatically
@@ -157,7 +194,12 @@ const start = async () => {
   });
 
   fastify.get(HEALTH_ROUTE, async (request, reply) => {
-    reply.send({ status: `ok - healthy 👌` });
+    // Test Sentry directly before throwing the error
+    // console.log("🧪 Testing direct Sentry capture...");
+    // const testEventId = Sentry.captureMessage("Direct Sentry test from health endpoint", "info");
+    // console.log("📤 Direct test Sentry Event ID:", testEventId);
+    // throw new Error("Health check failed here in Vendor Server");
+    reply.send({ status: `ok - healthy ` });
   });
   fastify.get(APPSTORE_SUGGEST_ROUTE, appstore_suggest_handler);
   fastify.get(APPSTORE_LIST_ROUTE, appstore_list_handler);
@@ -260,33 +302,41 @@ const start = async () => {
             // Add debugging: Check database connection and verify insert
             try {
               const createdOffer = await fastify.db.createOffer(offerToCreate);
-              fastify.log.info(`✅ Successfully created offer in database:`, createdOffer);
+              fastify.log.info(` Successfully created offer in database:`, createdOffer);
 
               // Immediately verify the offer was inserted
               const verifyOffer = await fastify.db.getOfferById(offerToCreate.id);
               if (verifyOffer) {
-                fastify.log.info(`✅ Verification successful: Offer ${offerToCreate.id} found in database`);
+                fastify.log.info(` Verification successful: Offer ${offerToCreate.id} found in database`);
               } else {
                 fastify.log.error(
-                  `❌ Verification failed: Offer ${offerToCreate.id} NOT found in database immediately after creation`,
+                  ` Verification failed: Offer ${offerToCreate.id} NOT found in database immediately after creation`,
                 );
               }
 
               fastify.log.info(`Added new default offer: ${offerToCreate.title} (${offerToCreate.id})`);
             } catch (createError) {
-              fastify.log.error(`❌ Failed to create offer ${offerToCreate.id}:`, createError);
+              fastify.log.error(` Failed to create offer ${offerToCreate.id}:`, createError);
+              Sentry.captureException(createError, {
+                tags: { component: "default-offers", offer_id: offerToCreate.id },
+                extra: { offerData: offerToCreate },
+              });
               throw createError; // Re-throw to be caught by outer catch block
             }
           } else {
             fastify.log.debug(`Default offer already exists: ${existingOffer.title} (${existingOffer.id})`);
           }
         } catch (dbError) {
-          console.log("dbError", dbError);
+          // console.log("dbError", dbError);
           fastify.log.error(`Error processing default offer ${offerData.id}:`, {
             error: dbError,
             offerData: offerData,
             errorMessage: dbError instanceof Error ? dbError.message : "Unknown error",
             errorStack: dbError instanceof Error ? dbError.stack : undefined,
+          });
+          Sentry.captureException(dbError, {
+            tags: { component: "default-offers", offer_id: offerData.id },
+            extra: { offerData },
           });
         }
       }
@@ -297,6 +347,9 @@ const start = async () => {
     // --- End default offers initialization ---
   } catch (err) {
     fastify.log.error(err);
+    Sentry.captureException(err, {
+      tags: { component: "server", phase: "startup" },
+    });
     process.exit(1);
   }
 };

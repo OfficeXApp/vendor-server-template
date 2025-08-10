@@ -63,6 +63,23 @@ docker-compose -f docker-compose.prod.yml logs --tail 500 -f
 docker-compose -f docker-compose.prod.yml restart
 ```
 
+### Sentry Error Tracking
+
+You may optionally setup Sentry Error Tracking by filling out .env variable `SENTRY_DSN`. Create one at [sentry.io](https://sentry.io).
+
+To upload sourcemaps to Sentry, run the `upload-sentry-sourcemaps.sh` script but replace with your project-id.
+
+```sh
+# Make it executable
+chmod +x upload-sentry-sourcemaps.sh
+
+# Build the project
+npm run build
+
+# Run it manually when you want to upload source maps
+./upload-sentry-sourcemaps.sh
+```
+
 ### Cost Reports via Storage Lens
 
 AWS S3 buckets are tagged with `officex_vendor_purchase_id` tag, which is used for billing purposes. You must set up a daily cost export on AWS Cost Explorer to export the cost report to a CSV file in a target S3 bucket.
