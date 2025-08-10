@@ -36,31 +36,10 @@ services:
     ports:
       - "3001:${PORT:-3001}" # Map host port 3001 to container port (default 3001)
       - "${PORT:-3001}:${PORT:-3001}" # Map host port 3001 to container port 3001 (for direct access)
-    environment:
-      - NODE_ENV=${NODE_ENV} # Read from .env
-      - DATA_DIR=${DATA_DIR} # Read from .env (for your app's data)
-      - PORT=${PORT:-3001} # Read from .env, with default
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION}
-      - VENDOR_NAME=${VENDOR_NAME}
-      - SERVER_DOMAIN=${SERVER_DOMAIN} # Read from .env
-      - SANITY_CHECK_ENV=${SANITY_CHECK_ENV} # Read from .env
-      - CHAIN_NAME=${CHAIN_NAME} # Read from .env
-      - CHAIN_ID_DEC=${CHAIN_ID_DEC} # Read from .env
-      - RPC_ENDPOINT=${RPC_ENDPOINT} # Read from .env
-      - USDC_ADDRESS=${USDC_ADDRESS} # Read from .env
-      - VENDOR_ID=${VENDOR_ID} # Read from .env
-      - VENDOR_TREASURY_ADDRESS=${VENDOR_TREASURY_ADDRESS} # Read from .env
-      - VENDOR_GAS_TANK_ADDRESS=${VENDOR_GAS_TANK_ADDRESS} # Read from .env
-      - VENDOR_GAS_TANK_PRIVATE_KEY=${VENDOR_GAS_TANK_PRIVATE_KEY} # Read from .env
-      - DATABASE_URL=${DATABASE_URL} # Read from .env
-      - CHAIN_EXPLORER_URL=${CHAIN_EXPLORER_URL} # Read from .env
-      - DEFAULT_BLOCK_CONFIRMATIONS=${DEFAULT_BLOCK_CONFIRMATIONS} # Read from .env
-      - BILLING_BUCKET_NAME=${BILLING_BUCKET_NAME}
-      # Database connection string for your Node.js app
-      # IMPORTANT: Use the service name 'db' as the hostname for inter-container communication
-      - DATABASE_URL=${DATABASE_URL}
+
+    env_file:
+      - ./.env
+
     volumes:
       - app_data:/data # Persistent storage for your application's data (e.g., /data/drives)
     depends_on:
