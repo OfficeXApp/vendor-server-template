@@ -63,26 +63,44 @@ export class DatabaseService {
 
   public async runDatabaseMigrations(): Promise<void> {
     const migrationsPath = path.join(__dirname, "..", "schema", "migrations");
-
     let client;
+
     try {
       client = await this.pool.connect();
       await client.query("BEGIN");
 
-      // Get list of already applied migrations from the new _migrations table
+      // Check if the _migrations table exists.
+      const tableCheckQuery =
+        "SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = '_migrations');";
+      const tableCheckResult = await client.query(tableCheckQuery);
+      const migrationsTableExists = tableCheckResult.rows[0].exists;
+
+      // If the migrations table doesn't exist, assume a brand new database
+      // and apply the full schema from the 'schema.sql' file.
+      if (!migrationsTableExists) {
+        console.log("Database is new. Applying full schema from 'schema.sql'...");
+        const fullSchemaPath = path.join(__dirname, "..", "schema", "schema.sql");
+        const fullSchemaSql = fs.readFileSync(fullSchemaPath, "utf8");
+        await client.query(fullSchemaSql);
+
+        // Record the initial schema application in the _migrations table
+        await client.query("INSERT INTO _migrations (name) VALUES ($1);", ["schema.sql"]);
+        console.log("Full schema applied successfully.");
+      }
+
+      // Now, get the list of already applied migrations from the migrations directory.
       const appliedMigrationsResult = await client.query("SELECT name FROM _migrations;");
       const appliedMigrations = new Set(appliedMigrationsResult.rows.map((row) => row.name));
 
-      // Find and apply new migrations
+      // Find and apply new, incremental migration files.
       const files = fs.readdirSync(migrationsPath).sort();
-
       console.log(`Found ${files.length} migration files. Applying new ones...`);
+
       for (const file of files) {
         if (file.endsWith(".sql") && !appliedMigrations.has(file)) {
           const filePath = path.join(migrationsPath, file);
           const sql = fs.readFileSync(filePath, "utf8");
-          console.log(`Applying migration: ${file}`);
-
+          console.log(`Applying incremental migration: ${file}`);
           await client.query(sql);
           // Insert the filename into the _migrations table to mark it as applied
           await client.query("INSERT INTO _migrations (name) VALUES ($1);", [file]);
@@ -98,7 +116,6 @@ export class DatabaseService {
       }
       throw error;
     } finally {
-      // Release the client back to the pool instead of ending the entire pool
       if (client) {
         client.release();
       }
