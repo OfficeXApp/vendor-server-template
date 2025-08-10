@@ -44,6 +44,9 @@ export interface CheckoutWallet {
   purchase_id?: CustomerPurchaseID;
   offramp_evm_address?: string;
   email?: string;
+  user_id?: string;
+  org_id?: string;
+  org_host?: string;
 }
 
 // this resides in postgres

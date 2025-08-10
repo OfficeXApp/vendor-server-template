@@ -24,7 +24,7 @@ const minTargetBalance = BigInt(0.5 * 1e6); // 0.01 USDC
 const gas_transfer_buffer = BigInt(0.4 * 1e6); // 0.10 USDC ($0.10 to refuel gas, $0.20 of gas, $0.10 for transfer out)
 
 const initCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
-  const { checkout_flow_id, org_id, user_id, tracer, email } = request.body as IRequestCheckoutInit;
+  const { checkout_flow_id, org_id, user_id, tracer, email, host } = request.body as IRequestCheckoutInit;
   const checkout_session_id = GenerateID.CheckoutSession();
   const tracer_id = tracer || GenerateID.Tracer();
 
@@ -40,6 +40,9 @@ const initCheckout = async (request: FastifyRequest, reply: FastifyReply) => {
       // @ts-ignore
       process.env.VENDOR_TREASURY_ADDRESS || "",
       email,
+      user_id,
+      org_id,
+      host,
     );
 
     const response_payload: IResponseCheckoutInit_Crypto = {
