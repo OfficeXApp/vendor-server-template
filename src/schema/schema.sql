@@ -51,12 +51,9 @@ CREATE TABLE IF NOT EXISTS checkout_wallets (
     offramp_evm_address VARCHAR(42), -- Address where funds are moved after verification
     offer_id TEXT, -- ADDED: Column to link to the offers table
     email TEXT,
-    
-    -- Foreign key constraint to offer (can be added now as offers table exists)
-    CONSTRAINT fk_offer
-        FOREIGN KEY (offer_id)
-        REFERENCES offers(id)
-        ON DELETE SET NULL -- If an offer is deleted, this wallet might become unlinked
+    user_id TEXT,
+    org_id TEXT,
+    org_host TEXT
 );
 
 COMMENT ON TABLE checkout_wallets IS 'Stores details of cryptocurrency deposit wallets for customer checkouts.';

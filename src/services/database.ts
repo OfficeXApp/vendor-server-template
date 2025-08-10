@@ -162,9 +162,10 @@ export class DatabaseService {
       INSERT INTO checkout_wallets (
         id, title, description, evm_address, private_key, seed_phrase,
         latest_usd_balance, created_at, updated_at, tracer, metadata,
-        purchase_id, offramp_evm_address, offer_id, checkout_flow_id, checkout_session_id, email
+        purchase_id, offramp_evm_address, offer_id, checkout_flow_id, checkout_session_id, email,
+        user_id, org_id, org_host
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING *;
     `;
     const values = [
@@ -185,6 +186,9 @@ export class DatabaseService {
       wallet.checkout_flow_id,
       wallet.checkout_session_id,
       wallet.email,
+      wallet.user_id,
+      wallet.org_id,
+      wallet.org_host,
     ];
     const result = await this.query<CheckoutWallet>(query, values);
     return result.rows[0];

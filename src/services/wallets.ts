@@ -153,6 +153,9 @@ export async function createRandomNewWallet(
   description?: string,
   offrampEvmAddress?: Address,
   email?: string,
+  user_id?: string,
+  org_id?: string,
+  host?: string,
 ): Promise<CheckoutWallet> {
   try {
     const mnemonic = generateMnemonic(english);
@@ -177,7 +180,10 @@ export async function createRandomNewWallet(
       metadata: checkoutFlowID ? { checkoutFlowID } : undefined,
       purchase_id: undefined,
       offramp_evm_address: offrampEvmAddress, // Use provided offramp address
-      email: email,
+      email: email || "",
+      user_id: user_id || "",
+      org_id: org_id || "",
+      org_host: host || "",
     };
 
     const createdWallet = await databaseService.createCheckoutWallet(newWallet);
