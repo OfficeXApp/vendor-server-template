@@ -73,11 +73,11 @@ COMMENT ON COLUMN checkout_wallets.purchase_id IS 'Links to the customer purchas
 -- Initially created without the fk_wallet constraint due to circular dependency.
 CREATE TABLE IF NOT EXISTS customer_purchases (
     id TEXT PRIMARY KEY, -- Unique identifier for this vendor's purchase record (e.g., 'CustomerPurchase_...')
-    wallet_id TEXT NOT NULL UNIQUE, -- Foreign key to the checkout_wallets table. UNIQUE as one wallet per purchase.
+    wallet_id TEXT UNIQUE, -- Foreign key to the checkout_wallets table. UNIQUE as one wallet per purchase.
     officex_purchase_id TEXT NOT NULL UNIQUE, -- ID from OfficeX for this purchase (PurchaseID)
     checkout_session_id TEXT NOT NULL UNIQUE, -- 
     title VARCHAR(255) NOT NULL,
-    description TEXT, -- ADDED COMMA HERE
+    description TEXT,
     customer_user_id TEXT NOT NULL, -- OfficeX UserID of the customer
     customer_org_id TEXT NOT NULL, -- OfficeX DriveID (organization ID)
     customer_org_host TEXT NOT NULL, -- Endpoint for OfficeX organization API
@@ -106,18 +106,6 @@ COMMENT ON COLUMN customer_purchases.balance_low_trigger IS 'Balance threshold f
 COMMENT ON COLUMN customer_purchases.balance_critical_trigger IS 'Balance threshold for sending a "critical balance" notification.';
 COMMENT ON COLUMN customer_purchases.balance_termination_trigger IS 'Balance threshold at which services for this purchase are terminated.';
 
--- Add the foreign key constraints for the circular dependency after both tables exist
-ALTER TABLE checkout_wallets
-ADD CONSTRAINT fk_purchase
-    FOREIGN KEY (purchase_id)
-    REFERENCES customer_purchases(id)
-    ON DELETE SET NULL;
-
-ALTER TABLE customer_purchases
-ADD CONSTRAINT fk_wallet
-    FOREIGN KEY (wallet_id)
-    REFERENCES checkout_wallets(id)
-    ON DELETE RESTRICT;
 
 
 -- Table for Usage Records (TimescaleDB Hypertable)
@@ -156,14 +144,14 @@ COMMENT ON COLUMN usage_records.metadata IS 'Additional JSON metadata for the us
 SELECT create_hypertable('usage_records', 'timestamp', if_not_exists => TRUE);
 
 -- Optional: Create indexes for frequently queried columns
-CREATE INDEX idx_offers_sku ON offers (sku);
-CREATE INDEX idx_checkout_wallets_evm_address ON checkout_wallets (evm_address);
-CREATE INDEX idx_checkout_wallets_checkout_session_id ON checkout_wallets (checkout_session_id);
-CREATE INDEX idx_customer_purchases_customer_purchase_id ON customer_purchases (officex_purchase_id);
-CREATE INDEX idx_customer_purchases_customer_user_id ON customer_purchases (customer_user_id);
-CREATE INDEX idx_customer_purchases_customer_org_id ON customer_purchases (customer_org_id);
-CREATE INDEX idx_customer_purchases_customer_check_billing_api_key ON customer_purchases (customer_billing_api_key);
-CREATE INDEX idx_customer_purchases_vendor_update_billing_api_key ON customer_purchases (vendor_billing_api_key);
+CREATE INDEX IF NOT EXISTS idx_offers_sku ON offers (sku);
+CREATE INDEX IF NOT EXISTS idx_checkout_wallets_evm_address ON checkout_wallets (evm_address);
+CREATE INDEX IF NOT EXISTS idx_checkout_wallets_checkout_session_id ON checkout_wallets (checkout_session_id);
+CREATE INDEX IF NOT EXISTS idx_customer_purchases_customer_purchase_id ON customer_purchases (officex_purchase_id);
+CREATE INDEX IF NOT EXISTS idx_customer_purchases_customer_user_id ON customer_purchases (customer_user_id);
+CREATE INDEX IF NOT EXISTS idx_customer_purchases_customer_org_id ON customer_purchases (customer_org_id);
+CREATE INDEX IF NOT EXISTS idx_customer_purchases_customer_check_billing_api_key ON customer_purchases (customer_billing_api_key);
+CREATE INDEX IF NOT EXISTS idx_customer_purchases_vendor_update_billing_api_key ON customer_purchases (vendor_billing_api_key);
 -- For usage_records, TimescaleDB automatically creates an index on the time column.
 -- An additional index on purchase_id is highly recommended for filtering usage by purchase.
-CREATE INDEX idx_usage_records_purchase_id_timestamp ON usage_records (purchase_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_records_purchase_id_timestamp ON usage_records (purchase_id, timestamp DESC);
